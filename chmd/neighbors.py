@@ -1,9 +1,10 @@
 # *- coding:utf-8 -*-
 """Generate solo, duo and trio index."""
+from typing import Tuple
 import numpy as np
 import chainer.functions as F
 from chainer import Variable
-from typing import Tuple
+from chainer.backend import get_array_module
 
 
 def cartesian_product(*args, xp=np) -> np.ndarray:
@@ -93,17 +94,17 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
     r = xp.zeros((n_batch * n_atoms, 3))
     r[index_batch, :] = positions
     r = r.reshape((n_batch, n_atoms, 3))
-    n, i, j, shift = neighbor_pairs_batch(cells, r, cutoff,
-                                          repeat, padding, xp)
+    n, i, j, shift = neighbor_duos_batch(cells, r, cutoff,
+                                         repeat, padding, xp)
     head_n = head[n]
     return i + head_n, j + head_n, shift
 
 
-def neighbor_pairs_batch(cells: np.ndarray, positions: np.ndarray,
-                         cutoff: float, repeat: np.ndarray,
-                         padding=None, xp=np
-                         ) -> Tuple[np.ndarray, np.ndarray,
-                                    np.ndarray, np.ndarray]:
+def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
+                        cutoff: float, repeat: np.ndarray,
+                        padding=None, xp=np
+                        ) -> Tuple[np.ndarray, np.ndarray,
+                                   np.ndarray, np.ndarray]:
     """Compute pairs that are in neighbor.
 
     It only support the situation that all batches has similar cell.
@@ -159,13 +160,14 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
     Parameters
     ----------
     i, j: concatenated result of neighbor pairs. it must be sorted.
-    Returns: a, b, c
+    Returns: a, b
       assuming that i, j, k is trio (i is center)
       c: c == i3
       a: j[a] == j3
       b: j[b] == k3
 
     """
+    assert i.shape == j.shape
     assert np.all(np.diff(i) >= 0)
     center, number = xp.unique(i, return_counts=True)
     m = xp.max(number)
@@ -183,13 +185,14 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
     idx2 = idx2[filt] + base
 
     filt = idx1 != idx2
-    return center[filt], idx1[filt], idx2[filt]
+    return idx1[filt], idx2[filt]
+    # return center[filt], idx1[filt], idx2[filt]
 
 
 def distance(cells: Variable, positions: Variable,
              i1: np.ndarray, i2: np.ndarray, j2: np.ndarray, s2: np.ndarray):
     """Distance, not tested yet."""
-    xp = cells.xp
+    xp = get_array_module(cells)
     n = i1[i2]
     n_batches = cells.shape[0]
     n_atoms = positions.shape[0]
@@ -197,7 +200,7 @@ def distance(cells: Variable, positions: Variable,
     assert cells.shape == (n_batches, 3, 3)
     assert positions.shape == (n_atoms, 3)
     assert xp.max(n) < n_batches
-    assert positions.xp == xp
+    assert get_array_module(positions) == xp
     assert i2.shape == (n_pairs, )
     assert j2.shape == (n_pairs, )
     assert n.shape == (n_pairs, )
@@ -214,32 +217,28 @@ def distance(cells: Variable, positions: Variable,
 
 def distance_angle(cell: Variable, positions: Variable, i1: np.ndarray,
                    i2: np.ndarray, j2: np.ndarray, s2: np.ndarray,
-                   c3: np.ndarray, a3: np.ndarray, b3: np.ndarray):
+                   i3: np.ndarray, j3: np.ndarray):
     """Distance and angles. Not in use yet."""
     n_pairs = len(i2)
-    n_trios = len(c3)
-    xp = positions.xp
+    n_trios = len(i3)
+    xp = get_array_module(positions)
     n = i1[i2]
-    assert isinstance(cell, Variable)
-    assert isinstance(positions, Variable)
     assert n.shape == (n_pairs,)
     assert i2.shape == (n_pairs,)
     assert j2.shape == (n_pairs,)
     assert s2.shape == (n_pairs, 3)
-    assert c3.shape == (n_trios,)
-    assert a3.shape == (n_trios,)
-    assert b3.shape == (n_trios,)
-    assert cell.xp == xp
+    assert i3.shape == (n_trios,)
+    assert j3.shape == (n_trios,)
+    assert get_array_module(cell) == xp
     assert isinstance(i2, xp.ndarray), (xp, type(i2))
     assert isinstance(j2, xp.ndarray), (xp, type(j2))
     assert isinstance(s2, xp.ndarray), (xp, type(s2))
-    assert isinstance(c3, xp.ndarray), (xp, type(c3))
-    assert isinstance(a3, xp.ndarray), (xp, type(a3))
-    assert isinstance(b3, xp.ndarray), (xp, type(b3))
+    assert isinstance(i3, xp.ndarray), (xp, type(i3))
+    assert isinstance(j3, xp.ndarray), (xp, type(j3))
     real_shifts = F.sum(cell[n, :, :] * s2[:, :, xp.newaxis], axis=1)
     r = positions
-    rrij = (r[j2][a3] + real_shifts[a3] - r[i2][a3])
-    rrik = (r[j2][b3] + real_shifts[b3] - r[i2][b3])
+    rrij = (r[j2][i3] + real_shifts[i3] - r[i2][i3])
+    rrik = (r[j2][j3] + real_shifts[j3] - r[i2][j3])
     rij = F.sqrt(F.sum(rrij ** 2, axis=1))
     rik = F.sqrt(F.sum(rrik ** 2, axis=1))
     cos = F.sum(rrij * rrik, axis=1) / (rij * rik)
@@ -282,3 +281,21 @@ def cumsum_from_zero(input_: np.ndarray, xp=np):
     cumsum = xp.roll(cumsum, 1)
     cumsum[0] = 0
     return cumsum
+
+
+def duo_index(num_elements: int, xp=np):
+    """Duo index."""
+    e = xp.arange(num_elements)
+    p1, p2 = cartesian_product(e, e, xp=xp).T
+    ret = xp.zeros([num_elements, num_elements], dtype=xp.int32)
+    ret[p1, p2] = xp.arange(num_elements * num_elements)
+    return ret
+
+
+def trio_index(num_elements: int, xp=np):
+    """Trio index."""
+    e = xp.arange(num_elements)
+    p1, p2, p3 = cartesian_product(e, e, e, xp=xp).T
+    ret = xp.zeros([num_elements, num_elements, num_elements], dtype=xp.int32)
+    ret[p1, p2, p3] = xp.arange(num_elements * num_elements * num_elements)
+    return ret
