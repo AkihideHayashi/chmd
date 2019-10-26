@@ -69,4 +69,4 @@ def hdf5_to_dict(hdf5):
     dic = dict()
     for key in hdf5:
         dic[key] = hdf5[key][()]
-    return dic, hdf5.attrs
+    return dic, dict(hdf5.attrs)
