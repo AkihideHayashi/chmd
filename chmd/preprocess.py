@@ -17,15 +17,15 @@ def symbols_to_elements(symbols: np.ndarray,
     elements: where order_of_symbols[elements] == symbols
 
     """
-    unique, inverse = np.unique(symbols, return_inverse=True)
-    elements = np.argsort(unique)[np.argsort(order_of_symbols)][inverse]
-    assert np.all(order_of_symbols[elements] == symbols)
-    assert np.all(np.sort(unique) == np.sort(order_of_symbols))
-    return elements
-    # ret = np.full(symbols.shape, -1)
-    # for i, s in enumerate(order_of_symbols):
-    #     ret = np.where(symbols == s, i, ret)
-    # return ret
+    # unique, inverse = np.unique(symbols, return_inverse=True)
+    # elements = np.argsort(unique)[np.argsort(order_of_symbols)][inverse]
+    # assert np.all(order_of_symbols[elements] == symbols)
+    # assert np.all(np.sort(unique) == np.sort(order_of_symbols))
+    # return elements
+    ret = np.full(symbols.shape, -1)
+    for i, s in enumerate(order_of_symbols):
+        ret = np.where(symbols == s, i, ret)
+    return ret
 
 
 def neighbor_duos_serial(cell: np.ndarray, positions: np.ndarray,
