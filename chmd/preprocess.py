@@ -56,7 +56,7 @@ def preprocess_energy_forces(cell, pbc, positions, energy, forces, symbols, orde
             }
 
 
-def dict_to_hdf5(root, name, dic):
+def dict_to_hdf5(root, name, dic, **kwargs):
     grp = root.create_group(name)
     for key, val in dic.items():
         dataset = grp.create_dataset(key, val.shape, dtype=val.dtype)
