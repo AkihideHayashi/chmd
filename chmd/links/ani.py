@@ -93,6 +93,7 @@ class ANI1Radial(object):
 
         """
         xp = get_array_module(rij)
+        dtype = chainer.config.dtype
         num_elements = self.num_elements
         n_duo = rij.shape[0]
         n_eta = self.EtaR.shape[0]
@@ -109,7 +110,7 @@ class ANI1Radial(object):
         shf = xp.array(self.ShfR[xp.newaxis, xp.newaxis, :])
         peaks = (0.25 * F.exp(-eta * (r - shf) ** 2) * f)
         flat_peaks = F.reshape(peaks, (n_duo, n_eta * n_shf))
-        seed = xp.zeros((n_solo * num_elements, n_eta * n_shf))
+        seed = xp.zeros((n_solo * num_elements, n_eta * n_shf), dtype=dtype)
         ej2 = ei[j2]
         scattered = F.scatter_add(seed, i2 * num_elements + ej2, flat_peaks)
         return scattered.reshape(n_solo, num_elements * n_eta * n_shf)
@@ -166,6 +167,7 @@ class ANI1Angular(object):
         j3: (n_trio,)
 
         """
+        dtype = chainer.config.dtype
         n_shf_a = self.ShfA.shape[0]
         n_eta_a = self.EtaA.shape[0]
         n_zeta = self.Zeta.shape[0]
@@ -200,7 +202,7 @@ class ANI1Angular(object):
         n1 = n_eta_a * n_zeta * n_shf_a * n_shf_z
         flat_peaks = F.reshape(peaks, (n_trio, n1))
         numnum = self.num_elements * (self.num_elements + 1) // 2
-        seed = xp.zeros((n_solo * numnum, n1))
+        seed = xp.zeros((n_solo * numnum, n1), dtype=dtype)
         center = i2[i3]
         ej3 = xp.array(self.symmetric_duo)[ei[j2[i3]], ei[j2[j3]]]
 
