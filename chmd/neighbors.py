@@ -83,7 +83,7 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
                   cutoff: float, repeat: np.ndarray,
                   i1: np.ndarray, xp=np):
     """Concatenate version of neighbor_duos_batch."""
-    _, count = np.unique(i1, return_counts=True)
+    _, count = xp.unique(i1, return_counts=True)
     n_batch = len(count)
     n_atoms = max(count)
     head = cumsum_from_zero(count)
@@ -120,7 +120,7 @@ def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
     assert positions.shape == (n_batch, n_atoms, 3)
 
     if padding is None:
-        padding = np.full((n_batch, n_atoms), False)
+        padding = xp.full((n_batch, n_atoms), False)
     assert padding.shape == (n_batch, n_atoms)
 
     shifts, positions1, positions2 = xp.broadcast_arrays(
@@ -130,7 +130,7 @@ def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
     )
     assert shifts.shape == (n_batch, n_atoms, n_atoms, n_shifts, 3)
     assert shifts.shape == positions1.shape == positions2.shape
-    real_shifts = xp.sum(cells[:, xp.newaxis, xp.newaxis, np.newaxis, :, :] *
+    real_shifts = xp.sum(cells[:, xp.newaxis, xp.newaxis, xp.newaxis, :, :] *
                          shifts[:, :, :, :, :, xp.newaxis],
                          axis=-2
                          )
@@ -168,7 +168,7 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
 
     """
     assert i.shape == j.shape
-    assert np.all(np.diff(i) >= 0)
+    assert xp.all(xp.diff(i) >= 0)
     center, number = xp.unique(i, return_counts=True)
     m = xp.max(number)
     n = len(center)
