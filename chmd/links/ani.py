@@ -1,5 +1,6 @@
 """ANI-1. DOI: 10.1039/c6sc05720a."""
 import numpy as np
+import chainer
 import chainer.functions as F
 from chainer.backend import get_array_module
 from chmd.neighbors import duo_index, distance, distance_angle, neighbor_trios
