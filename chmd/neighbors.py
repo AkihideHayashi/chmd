@@ -170,7 +170,7 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
     assert i.shape == j.shape
     assert xp.all(xp.diff(i) >= 0)
     center, number = xp.unique(i, return_counts=True)
-    m = xp.max(number)
+    m = int(xp.max(number))
     n = len(center)
     base = cumsum_from_zero(number, xp)[repeat_interleave(number * number, xp)]
     center = xp.broadcast_to(center[:, xp.newaxis, xp.newaxis], (n, m, m))
