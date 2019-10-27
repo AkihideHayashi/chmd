@@ -1,4 +1,5 @@
 """ANI-1."""
+import chainer
 from chainer import Link, Chain, ChainList
 import chainer.links as L
 import chainer.functions as F
@@ -34,10 +35,11 @@ class AtomWiseNN(ChainList):
 
     def forward(self, x, e):
         """Select and apply NN for each atoms."""
+        dtype = chainer.config.dtype
         out = F.concat([n(x)[None, :, :] for n in self], axis=0)
         n = out.shape[0]
         condition = self.xp.arange(n)[:, None] == e[None, :]
-        zeros = self.xp.zeros(out.shape)
+        zeros = self.xp.zeros(out.shape, dtype=dtype)
         ret = F.where(condition[:, :, None], out, zeros)
         return F.sum(ret, axis=0)
 
