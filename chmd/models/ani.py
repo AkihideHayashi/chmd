@@ -52,8 +52,8 @@ class ANI1(Chain):
             self.aev = ANI1AEV(num_elements, **aev_params)
             self.nn = AtomWiseNN(**nn_params)
 
-    def forward(self, cells, ri, ei, i1, i2, j2, s2):
-        aev = self.aev(cells, ri, ei, i1, i2, j2, s2)
+    def forward(self, ci, ri, ei, i1, i2, j2, s2):
+        aev = self.aev(ci, ri, ei, i1, i2, j2, s2)
         atomic = self.nn(aev, ei)
-        seed = self.xp.zeros((cells.shape[0], atomic.shape[1]))
+        seed = self.xp.zeros((ci.shape[0], atomic.shape[1]))
         return F.scatter_add(seed, i1, atomic)
