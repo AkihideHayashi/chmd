@@ -55,7 +55,8 @@ class ANI1(Chain):
             self.nn = AtomWiseNN(**nn_params)
 
     def forward(self, ci, ri, ei, i1, i2, j2, s2):
+        dtype = chainer.config.dtype
         aev = self.aev(ci, ri, ei, i1, i2, j2, s2)
         atomic = self.nn(aev, ei)
-        seed = self.xp.zeros((ci.shape[0], atomic.shape[1]))
+        seed = self.xp.zeros((ci.shape[0], atomic.shape[1]), dtype=dtype)
         return F.scatter_add(seed, i1, atomic)
