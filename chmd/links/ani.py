@@ -78,8 +78,8 @@ class ANI1Radial(object):
 
         """
         self.num_elements = num_elements
-        self.EtaR = EtaR
-        self.ShfR = ShfR
+        self.EtaR = np.array(EtaR)
+        self.ShfR = np.array(ShfR)
         self.cutoff = CosineCutoff(Rcr)
 
     def __call__(self, rij, ei, i2, j2):
@@ -145,10 +145,10 @@ class ANI1Angular(object):
         """
         xp = np
         self.num_elements = num_elements
-        self.EtaA = EtaA
-        self.Zeta = Zeta
-        self.ShfA = ShfA
-        self.ShfZ = ShfZ
+        self.EtaA = np.array(EtaA)
+        self.Zeta = np.array(Zeta)
+        self.ShfA = np.array(ShfA)
+        self.ShfZ = np.array(ShfZ)
         self.cutoff = CosineCutoff(Rca)
         self.symmetric_duo = symmetric_duo_index(
             duo_index(num_elements, xp), xp)
