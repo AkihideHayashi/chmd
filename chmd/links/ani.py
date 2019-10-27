@@ -191,10 +191,10 @@ class ANI1Angular(object):
         fcj = fcj[:, None, None, None, None]
         fck = fck[:, None, None, None, None]
         theta = theta[:, None, None, None, None]
-        eta_a = self.EtaA[None, :, None, None, None]
-        zeta = self.Zeta[None, None, :, None, None]
-        shf_a = self.ShfA[None, None, None, :, None]
-        shf_z = self.ShfZ[None, None, None, None, :]
+        eta_a = xp.array(self.EtaA[None, :, None, None, None])
+        zeta = xp.array(self.Zeta[None, None, :, None, None])
+        shf_a = xp.array(self.ShfA[None, None, None, :, None])
+        shf_z = xp.array(self.ShfZ[None, None, None, None, :])
         factor1 = ((1 + F.cos(theta - shf_z)) / 2) ** zeta
         factor2 = F.exp(-eta_a * ((rij + rik) / 2 - shf_a) ** 2)
         # (n_trio, n_eta_a, n_zeta, n_shf_a, n_shf_z)
