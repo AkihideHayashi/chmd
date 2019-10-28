@@ -1,4 +1,5 @@
 """ANI-1."""
+import numpy as np
 import chainer
 from chainer import Chain, ChainList
 import chainer.links as L
