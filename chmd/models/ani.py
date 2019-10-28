@@ -1,6 +1,6 @@
 """ANI-1."""
 import chainer
-from chainer import Link, Chain, ChainList
+from chainer import Chain, ChainList
 import chainer.links as L
 import chainer.functions as F
 from chmd.links.ani import ANI1AEV
