@@ -12,28 +12,29 @@ from sklearn.linear_model import LinearRegression
 class AtomNN(ChainList):
     """Auxiliary function for AtomWiseNN."""
 
-    def __init__(self, n_layers):
+    def __init__(self, n_layers, act):
         """Initilize."""
         super().__init__()
         for nl in n_layers:
             self.add_link(L.Linear(None, nl, nobias=False))
+        self.act = act
 
     def forward(self, x):
         """Compute for each atoms."""
         h = self[0](x)
         for l in self[1:]:
-            h = l(gaussian(h))
+            h = l(self.act(h))
         return h
 
 
 class AtomWiseNN(ChainList):
     """NN part of ANI-1."""
 
-    def __init__(self, n_layers):
+    def __init__(self, n_layers, act):
         """Initialize."""
         super().__init__()
         for nl in n_layers:
-            self.add_link(AtomNN(nl))
+            self.add_link(AtomNN(nl, act))
 
     def forward(self, x, e):
         """Select and apply NN for each atoms."""
