@@ -46,8 +46,8 @@ class ANI1AEV(object):
         """
         xp = get_array_module(ri)
         rij_full = distance(cells, ri, i1, i2, j2, s2)
-        in_rc_rad = rij_full.data < self.radial.cutoff
-        in_rc_ang = rij_full.data < self.angular.cutoff
+        in_rc_rad = rij_full.data < self.radial.rc
+        in_rc_ang = rij_full.data < self.angular.rc
         g_rad = self.radial(rij_full[in_rc_rad], ei,
                             i2[in_rc_rad], j2[in_rc_rad])
         i2_a = i2[in_rc_ang]
@@ -74,7 +74,7 @@ class ANI1Radial(object):
         cutoff: cutoff radius of fc in eq (3). Rcr in torchani
 
         """
-        self.cutoff = cutoff
+        self.rc = cutoff
         self.num_elements = num_elements
         self.EtaR = np.array([1 / sigma * sigma])
         self.ShfR = np.arange(head, tail, step)
@@ -143,6 +143,7 @@ class ANI1Angular(object):
 
         """
         xp = np
+        self.rc = cutoff
         self.num_elements = num_elements
         self.EtaA = np.array([1 / sigma * sigma])
         self.Zeta = np.array([zeta])
