@@ -148,7 +148,7 @@ class ANI1Angular(object):
         self.EtaA = np.array([1.0 / (sigma * sigma)])
         self.Zeta = np.array([zeta])
         self.ShfA = np.arange(head, tail, step)
-        self.ShfZ = np.linspace(np.pi, 0, ndiv)
+        self.ShfZ = np.linspace(np.pi, 0, ndiv, endpoint=False)[::-1]
         self.cutoff = CosineCutoff(cutoff)
         self.symmetric_duo = symmetric_duo_index(
             duo_index(num_elements, xp), xp)
