@@ -34,7 +34,7 @@ class AtomWiseNN(ChainList):
         """Initialize."""
         super().__init__()
         for nl in n_layers:
-            self.add_link(AtomNN(nl))
+            self.add_link(AtomNN(nl, act))
 
     def forward(self, x, e):
         """Select and apply NN for each atoms."""
