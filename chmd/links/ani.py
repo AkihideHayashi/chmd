@@ -10,8 +10,7 @@ from chmd.cutoffs import CosineCutoff
 class ANI1AEV(object):
     """Compute Full AEV."""
 
-    def __init__(self, num_elements, Rcr, Rca,
-                 EtaR, ShfR, Zeta, ShfZ, EtaA, ShfA):
+    def __init__(self, num_elements, radial, angular):
         """Initializer.
 
         Parameters
@@ -28,10 +27,8 @@ class ANI1AEV(object):
 
         """
         self.num_elements = num_elements
-        self.Rcr = Rcr
-        self.Rca = Rca
-        self.radial = ANI1Radial(num_elements, EtaR, ShfR, Rcr)
-        self.angular = ANI1Angular(num_elements, EtaA, Zeta, ShfA, ShfZ, Rca)
+        self.radial = ANI1Radial(num_elements, **radial)
+        self.angular = ANI1Angular(num_elements, **angular)
 
     def __call__(self, cells, ri, ei, i1, i2, j2, s2):
         """Calculate full AEV.
@@ -49,8 +46,8 @@ class ANI1AEV(object):
         """
         xp = get_array_module(ri)
         rij_full = distance(cells, ri, i1, i2, j2, s2)
-        in_rc_rad = rij_full.data < self.Rcr
-        in_rc_ang = rij_full.data < self.Rca
+        in_rc_rad = rij_full.data < self.radial.cutoff
+        in_rc_ang = rij_full.data < self.angular.cutoff
         g_rad = self.radial(rij_full[in_rc_rad], ei,
                             i2[in_rc_rad], j2[in_rc_rad])
         i2_a = i2[in_rc_ang]
@@ -66,21 +63,22 @@ class ANI1AEV(object):
 class ANI1Radial(object):
     """Eq (3)."""
 
-    def __init__(self, num_elements, EtaR, ShfR, Rcr):
+    def __init__(self, num_elements, cutoff, head, tail, step, sigma):
         """Initializer.
 
         Parameters
         ----------
         num_elements: number of elements (species).
-        EtaR: eta in eq (3).
-        ShfR: Rs in eq (3).
-        Rcr: cutoff radius of fc in eq (3).
+        EtaR: Define eta in eq (3). eta == 1 / (sigma * sigma)
+        head, tail, step: Define Rs in eq (3). Define ShfR in torchani
+        cutoff: cutoff radius of fc in eq (3). Rcr in torchani
 
         """
+        self.cutoff = cutoff
         self.num_elements = num_elements
-        self.EtaR = np.array(EtaR)
-        self.ShfR = np.array(ShfR)
-        self.cutoff = CosineCutoff(Rcr)
+        self.EtaR = np.array([1 / sigma * sigma])
+        self.ShfR = np.arange(head, tail, step)
+        self.cutoff = CosineCutoff(cutoff)
 
     def __call__(self, rij, ei, i2, j2):
         """Calculate radial aev.
@@ -130,26 +128,27 @@ def symmetric_duo_index(di: np.ndarray, xp=np):
 class ANI1Angular(object):
     """Eq (4)."""
 
-    def __init__(self, num_elements, EtaA, Zeta, ShfA, ShfZ, Rca):
+    def __init__(self, num_elements, cutoff, head, tail, step,
+                 sigma, zeta, ndiv):
         """Initilizer.
 
         Parameters
         ----------
         num_elements: number of elements (species).
-        EtaA: eta in eq (4).
-        Zeta: zeta in eq(4).
-        ShfA: Rs in eq(4).
-        ShfZ: theta_s in eq(4).
-        Rca: cutoff radius for eq (4).
+        cutoff: Rca in eq (4) or torchani.
+        sigma: Define eta in eq (4) or EtaA in torchani.
+        zeta: Zeta in eq(4) or torchani.
+        head, tail, step: Define Rs in eq(4) or ShfA in torchani.
+        ndiv: Define theta_s in eq(4) or ShfZ in torchani.
 
         """
         xp = np
         self.num_elements = num_elements
-        self.EtaA = np.array(EtaA)
-        self.Zeta = np.array(Zeta)
-        self.ShfA = np.array(ShfA)
-        self.ShfZ = np.array(ShfZ)
-        self.cutoff = CosineCutoff(Rca)
+        self.EtaA = np.array([1 / sigma * sigma])
+        self.Zeta = np.array([zeta])
+        self.ShfA = np.arange(head, tail, step)
+        self.ShfZ = np.linspace(np.pi, 0, ndiv)
+        self.cutoff = CosineCutoff(cutoff)
         self.symmetric_duo = symmetric_duo_index(
             duo_index(num_elements, xp), xp)
 
