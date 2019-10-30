@@ -76,7 +76,7 @@ class ANI1Radial(object):
         """
         self.rc = cutoff
         self.num_elements = num_elements
-        self.EtaR = np.array([1 / sigma * sigma])
+        self.EtaR = np.array([1.0 / (sigma * sigma)])
         self.ShfR = np.arange(head, tail, step)
         self.cutoff = CosineCutoff(cutoff)
 
@@ -145,7 +145,7 @@ class ANI1Angular(object):
         xp = np
         self.rc = cutoff
         self.num_elements = num_elements
-        self.EtaA = np.array([1 / sigma * sigma])
+        self.EtaA = np.array([1.0 / (sigma * sigma)])
         self.Zeta = np.array([zeta])
         self.ShfA = np.arange(head, tail, step)
         self.ShfZ = np.linspace(np.pi, 0, ndiv)
