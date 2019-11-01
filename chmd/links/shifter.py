@@ -21,8 +21,8 @@ class EnergyShifter(Link):
         """Set up coef and intercept."""
         coef, intercept = linear_coef_intercept(
             elements, energies, self.num_elements)
-        self.add_persistent('coef', np.array(coef, dtype=chainer.config.dtype))
-        self.add_persistent('intercept', intercept)
+        self.coef[...] = np.array(coef, dtype=chainer.config.dtype)
+        self.intercept[...] = intercept
 
     def forward(self, ei, i1):
         """Forward."""
