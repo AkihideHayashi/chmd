@@ -51,7 +51,7 @@ class AtomWiseNN(ChainList):
 class ANI1(Chain):
     """ANI-1 energy calculator."""
 
-    def __init__(self, num_elements, aev_params, nn_params, elements, energies):
+    def __init__(self, num_elements, aev_params, nn_params):
         """Initializer."""
         super().__init__()
         with self.init_scope():
