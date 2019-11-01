@@ -2,6 +2,7 @@
 import numpy as np
 import chainer
 from chainer import Link
+import chainer.functions as F
 from sklearn.linear_model import LinearRegression
 
 
