@@ -15,7 +15,7 @@ class EnergyShifter(Link):
         self.num_elements = num_elements
         self.add_persistent('coef',
                             np.zeros(num_elements, dtype=chainer.config.dtype))
-        self.add_persistent('intercept', 0.0)
+        self.add_persistent('intercept', np.array(0.0))
 
     def setup(self, elements, energies):
         """Set up coef and intercept."""
