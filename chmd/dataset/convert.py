@@ -2,7 +2,7 @@
 import numpy as np
 import chainer
 from chainer.dataset.convert import to_device
-from chmd.neighbors import cumsum_from_zero
+from chmd.functions.neighbors import cumsum_from_zero
 
 
 def concat_converter(batch, device=None, padding=None):
@@ -37,36 +37,3 @@ def concat_converter(batch, device=None, padding=None):
     for key in ret:
         ret[key] = to_device(device, ret[key])
     return ret
-
-
-# class SQLConverter(object):
-#     def __init__(self, path):
-#         self.path = path
-#         self.conn = None
-# 
-#     def all_ids(self):
-#         self.conn.row_factory = None
-#         ids = np.array([i[0]
-#                         for i in self.conn.execute('SELECT id FROM atoms')])
-#         self.conn.row_factory = lambda *x: dict(sqlite3.Row(*x))
-#         return ids
-# 
-#     def __enter__(self):
-#         sqlite3.register_adapter(np.ndarray, save)
-#         sqlite3.register_converter('NDARRAY', load)
-#         self.conn = sqlite3.connect(
-#             self.path, detect_types=sqlite3.PARSE_DECLTYPES)
-#         self.conn.row_factory = lambda *x: dict(sqlite3.Row(*x))
-#         return self
-# 
-#     def __exit__(self, typ, value, traceback):
-#         self.conn.close()
-# 
-#     def __call__(self, ids, device=None, padding=None):
-#         ids = [int(i) for i in ids]
-#         mols = list(self.conn.execute(
-#             'SELECT elements, cell, positions, i2, j2, s2, energy, forces FROM atoms WHERE id IN ({})'.format(
-#                 ','.join('?' for _ in ids)),
-#             ids))
-#         return concat_converter(mols, device, padding)
-# 

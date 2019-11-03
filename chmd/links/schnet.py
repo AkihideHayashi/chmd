@@ -5,8 +5,7 @@ import numpy as np
 import chainer.links as L
 import chainer.functions as F
 from chainer import Link, ChainList
-from chmd.neighbors import neighbor_trios
-from chmd.atoms import Atoms, get_items
+from chmd.functions.neighbors import neighbor_trios
 from chmd.activations import shifted_softplus
 
 # %%

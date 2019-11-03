@@ -1,13 +1,10 @@
 """ANI-1."""
-import numpy as np
 import chainer
 from chainer import Chain, ChainList
 import chainer.links as L
 import chainer.functions as F
 from chmd.links.ani import ANI1AEV
 from chmd.links.shifter import EnergyShifter
-from chmd.activations import gaussian
-from sklearn.linear_model import LinearRegression
 
 
 class AtomNN(ChainList):
@@ -60,6 +57,7 @@ class ANI1(Chain):
             self.shift = EnergyShifter(num_elements)
 
     def forward(self, ci, ri, ei, i1, i2, j2, s2):
+        """Apply."""
         dtype = chainer.config.dtype
         aev = self.aev(ci, ri, ei, i1, i2, j2, s2)
         atomic = self.nn(aev, ei)

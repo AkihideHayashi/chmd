@@ -3,8 +3,9 @@ import numpy as np
 import chainer
 import chainer.functions as F
 from chainer.backend import get_array_module
-from chmd.neighbors import duo_index, distance, distance_angle, neighbor_trios
-from chmd.cutoffs import CosineCutoff
+from chmd.functions.neighbors import (duo_index, distance,
+                                      distance_angle, neighbor_trios)
+from chmd.functions.cutoffs import CosineCutoff
 
 
 class ANI1AEV(object):
@@ -209,96 +210,3 @@ class ANI1Angular(object):
 
         scattered = F.scatter_add(seed, center * numnum + ej3, flat_peaks)
         return scattered.reshape(n_solo, numnum * n1) / 2
-
-# def radial_terms(num_elements: int, EtaR: np.ndarray, ShfR: np.ndarray,
-#                  ei: np.ndarray, i2: np.ndarray, j2: np.ndarray,
-#                  rij: Variable, fc: Callable,
-#                  ) -> np.ndarray:
-#     """Eq (3).
-#
-#     Parameters
-#     ----------
-#     num_elements: number of elements.
-#     ei: element number of each atom. (n_solo,)
-#     i2: duo index. (n_duo,)
-#     j2: duo index. (n_duo,)
-#     rij: (n_duo,)
-#     fc : fc(rij). (n_duo,)
-#     EtaR: (n_eta, n_shf)
-#     ShfR: (n_shf, n_shf)
-#
-#     Returns
-#     -------
-#     Gr: (n_solo, ne * n_eta * n_shf)
-#
-#     """
-#     n_duo = rij.shape[0]
-#     n_eta, n_shf = EtaR.shape
-#     xp = get_array_module(rij)
-#     n_solo = ei.shape[0]
-#     assert ei.shape == (n_solo,)
-#     assert rij.shape == (n_duo,)
-#     assert EtaR.shape == (n_eta, n_shf)
-#     assert ShfR.shape == (n_eta, n_shf)
-#     # (n_duo, n_eta, n_shf)
-#     r = rij[:, xp.newaxis, xp.newaxis]
-#     f = fc(r)
-#     shf = ShfR[xp.newaxis, :, :]
-#     eta = EtaR[xp.newaxis, :, :]
-#     peaks = (0.25 * F.exp(-eta * (r - shf) ** 2) * f)
-#     flat_peaks = F.reshape(peaks, (n_duo, n_eta * n_shf))
-#     seed = xp.zeros((n_solo * num_elements, n_eta * n_shf))
-#     ej2 = ei[j2]
-#     scattered = F.scatter_add(seed, i2 * num_elements + ej2, flat_peaks)
-#     return scattered.reshape(n_solo, num_elements * n_eta * n_shf)
-#
-#
-#
-#
-# def angular_terms(num_elements: int,
-#                   EtaA: np.ndarray, Zeta: np.ndarray,
-#                   ShfA: np.ndarray, ShfZ: np.ndarray,
-#                   ei: np.ndarray, duo_index: np.ndarray,
-#                   i2, j2, i3, j3,
-#                   rij: Variable, rik: Variable, cosijk,
-#                   fc: Callable,
-#                   ):
-#     n_eta_a, n_zeta, n_shf_a, n_shf_z = ShfA.shape
-#     n_solo = ei.shape[0]
-#     n_trio = rij.shape[0]
-#     xp = rij.xp
-#     assert rij.shape == (n_trio,)
-#     assert rik.shape == (n_trio,)
-#     assert cosijk.shape == (n_trio,)
-#     assert EtaA.shape == (n_eta_a, n_zeta, n_shf_a, n_shf_z)
-#     assert Zeta.shape == (n_eta_a, n_zeta, n_shf_a, n_shf_z)
-#     assert ShfA.shape == (n_eta_a, n_zeta, n_shf_a, n_shf_z)
-#     assert ShfZ.shape == (n_eta_a, n_zeta, n_shf_a, n_shf_z)
-#     theta = F.arccos(cosijk * 0.95)
-#     fcj = fc(rij)
-#     fck = fc(rik)
-#     rij = rij[:, None, None, None, None]
-#     rik = rik[:, None, None, None, None]
-#     fcj = fcj[:, None, None, None, None]
-#     fck = fck[:, None, None, None, None]
-#     theta = theta[:, None, None, None, None]
-#     shf_z = ShfZ[None, :, :, :, :]
-#     zeta = Zeta[None, :, :, :, :]
-#     eta_a = EtaA[None, :, :, :, :]
-#     shf_a = ShfA[None, :, :, :, :]
-#     factor1 = ((1 + F.cos(theta - shf_z)) / 2) ** zeta
-#     factor2 = F.exp(-eta_a * ((rij + rik) / 2 - shf_a) ** 2)
-#     # (n_trio, n_eta_a, n_zeta, n_shf_a, n_shf_z)
-#     peaks = 2 * factor1 * factor2 * fcj * fck
-#     # (n_trio, n_eta_a * n_zeta * n_shf_a * n_shf_z)
-#     n1 = n_eta_a * n_zeta * n_shf_a * n_shf_z
-#     flat_peaks = F.reshape(peaks, (n_trio, n1))
-#     numnum = num_elements * (num_elements + 1) // 2
-#     seed = xp.zeros((n_solo * numnum, n1))
-#     center = i2[i3]
-#     ej3 = symmetric_duo_index(duo_index, xp=xp)[ei[j2[i3]], ei[j2[j3]]]
-#
-#     scattered = F.scatter_add(seed, center * numnum + ej3, flat_peaks)
-#     return scattered.reshape(n_solo, numnum * n1)
-#
-#
