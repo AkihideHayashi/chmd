@@ -5,7 +5,8 @@ from chainer import reporter
 
 
 class PurposeTrigger(object):
-    def __init__(self, tol, check_trigger=(1, 'epoch'), monitor='main/loss', max_trigger=(100, 'epoch')):
+    def __init__(self, tol, check_trigger=(1, 'epoch'), monitor='main/loss',
+                 max_trigger=(100, 'epoch')):
         self.count = 0
         self._max_trigger = util.get_trigger(max_trigger)
         self._interval_trigger = util.get_trigger(check_trigger)
@@ -39,5 +40,3 @@ class PurposeTrigger(object):
 
     def get_training_length(self):
         return self._max_trigger.get_training_length()
-
-

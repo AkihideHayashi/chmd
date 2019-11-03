@@ -3,7 +3,7 @@ from chainer.dataset import convert
 from chainer.training.updaters import StandardUpdater
 
 
-class GradUpdater(StandardUpdater):
+class StandardGradUpdater(StandardUpdater):
     def __init__(self, iterator, optimizer, converter, device=None,
                  loss_func=None, grad_func=None,
                  loss_scale=None, auto_new_epoch=True):
