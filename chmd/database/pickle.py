@@ -7,7 +7,7 @@ from chainer.backend import get_array_module
 from chainer.datasets import open_pickle_dataset_writer, open_pickle_dataset
 from chmd.database.vasprun import read_trajectory
 from chmd.preprocess import symbols_to_elements
-from chmd.neighbors import number_repeats, neighbor_duos
+from chmd.functions.neighbors import number_repeats, neighbor_duos
 
 
 def neighbor_duos_serial(cell: np.ndarray, positions: np.ndarray,
@@ -53,7 +53,18 @@ def initialize_manager(cutoff, symbols):
 
 
 def make_dataset(vaspruns_dir, pklout, manout, pklinp=None, maninp=None):
-    """Build data set from scratch or from pklinp and unread files."""
+    """Build data set from scratch or from pklinp and unread files.
+
+    Parameters
+    ----------
+    vaspruns_dir: Path for the directory which contains vasprun.xml.
+    pklout: Pickle file path for output.
+    manout: Manager json file path for output.
+            cutoff, symbols, parsed, remain, train, dran
+    pklinp: Pickle file path to read.
+    maninp: Manager json file path for input.
+
+    """
     with open(maninp, 'r') as f:
         manage = json.load(f)
     cutoff = manage['cutoff']

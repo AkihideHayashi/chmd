@@ -56,7 +56,7 @@ class ANI1(Chain):
             self.nn = AtomWiseNN(**nn_params)
             self.shift = EnergyShifter(num_elements)
 
-    def forward(self, ci, ri, ei, i1, i2, j2, s2):
+    def forward(self, ri, ci, ei, i1, i2, j2, s2):
         """Apply."""
         dtype = chainer.config.dtype
         aev = self.aev(ci, ri, ei, i1, i2, j2, s2)
