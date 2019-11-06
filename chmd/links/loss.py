@@ -7,11 +7,12 @@ from chainer import reporter
 class SummaryLoss(Chain):
     """Summation of many loss."""
 
-    def __init__(self, losses, loss_fun, *args, **kwargs):
+    def __init__(self, models, loss_fun, *args, **kwargs):
         """Initializer."""
         super().__init__()
         with self.init_scope():
-            self.losses = [loss_fun(loss, *args, **kwargs) for loss in losses]
+            self.losses = ChainList(*[loss_fun(model, *args, **kwargs)
+                                      for model in models])
 
     def forward(self, *args, **kwargs):
         """Forward."""
