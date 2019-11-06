@@ -51,11 +51,11 @@ class EnergyGradLoss(Chain):
         en = self.target(ri, *args, **kwargs)
         fi, = grad([-en], [ri], enable_double_backprop=True)
         loss_e = F.mean_squared_error(en, e)
-        reporter.report({'loss_e': loss_e.data}, self.target)
+        reporter.report({'loss_e': loss_e.data}, self)
         loss_f = F.mean_squared_error(fi, f)
-        reporter.report({'loss_f': loss_f.data}, self.target)
+        reporter.report({'loss_f': loss_f.data}, self)
         loss = self.ce * loss_e + self.cf * loss_f
-        reporter.report({'loss': loss.data}, self.target)
+        reporter.report({'loss': loss.data}, self)
         return loss
 
 

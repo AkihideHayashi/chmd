@@ -7,7 +7,7 @@ class MeanVariance(Chain):
         super().__init__()
         with self.init_scope():
             self.agents = agents
-    
+
     def forward(self, *args, **kwargs):
         n = len(self.agents)
         predicts = [l(*args, **kwargs) for l in self.agents]
