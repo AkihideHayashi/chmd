@@ -4,19 +4,18 @@ import chainer.functions as F
 from chainer import reporter
 
 
-class SummaryLoss(ChainList):
+class SummaryLoss(Chain):
     """Summation of many loss."""
 
-    def __init__(self, *losses):
+    def __init__(self, losses, loss_fun, *args, **kwargs):
         """Initializer."""
         super().__init__()
         with self.init_scope():
-            for loss in losses:
-                self.append(loss)
+            self.losses = [loss_fun(loss, *args, **kwargs) for loss in losses]
 
     def forward(self, *args, **kwargs):
         """Forward."""
-        return sum(l(*args, **kwargs) for l in self)
+        return sum(l(*args, **kwargs) for l in self.losses)
 
 
 class EnergyGradLoss(Chain):
