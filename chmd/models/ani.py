@@ -36,7 +36,7 @@ class Adjacent2Energy(Chain):
         super().__init__()
         with self.init_scope():
             self.aev = ANI1AEV(num_elements, **aev_params)
-            self.energy = AEV2Energy(num_elements, **nn_params)
+            self.energy = AEV2Energy(num_elements, nn_params)
 
     def forward(self, ri, ci, ei, i1, i2, j2, s2):
         """Apply."""
