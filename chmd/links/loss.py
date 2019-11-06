@@ -26,8 +26,6 @@ class SummaryLoss(Chain):
                 skey = key.split('/')
                 if skey[:len(name)] == name:
                     observe['/'.join(skey[len(name):])] += reporter.observation[key]
-        for key in observe:
-            observe[key] /= len(self.losses)
         report(observe, self)
         return loss
 
