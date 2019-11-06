@@ -1,7 +1,8 @@
 """Loss."""
-from chainer import Variable, Chain, ChainList, grad
+from collections import defaultdict
+from chainer import Variable, Chain, ChainList, grad, report
 import chainer.functions as F
-from chainer import reporter
+from chainer import get_current_reporter
 
 
 class SummaryLoss(Chain):
@@ -16,13 +17,25 @@ class SummaryLoss(Chain):
 
     def forward(self, *args, **kwargs):
         """Forward."""
-        return sum(l(*args, **kwargs) for l in self.losses)
+        loss = sum(l(*args, **kwargs) for l in self.losses)
+        reporter = get_current_reporter()
+        observe = defaultdict(float)
+        for child in self.losses:
+            name = reporter._observer_names[id(child)].split('/')
+            for key in reporter.observation:
+                skey = key.split('/')
+                if skey[:len(name)] == name:
+                    observe['/'.join(skey[len(name):])] += reporter.observation[key]
+        for key in observe:
+            observe[key] /= len(self.losses)
+        report(observe, self)
+        return loss
 
 
 class EnergyGradLoss(Chain):
     """Energy + Grad."""
 
-    def __init__(self, target, ce, cf):
+    def __init__(self, predictor, ce, cf):
         """Initializer.
 
         Paramters
@@ -33,7 +46,7 @@ class EnergyGradLoss(Chain):
         """
         super().__init__()
         with self.init_scope():
-            self.target = target
+            self.predictor = predictor
         self.ce = ce
         self.cf = cf
 
@@ -49,14 +62,14 @@ class EnergyGradLoss(Chain):
 
         """
         ri = Variable(ri)
-        en = self.target(ri, *args, **kwargs)
+        en = self.predictor(ri, *args, **kwargs)
         fi, = grad([-en], [ri], enable_double_backprop=True)
         loss_e = F.mean_squared_error(en, e)
-        reporter.report({'loss_e': loss_e.data}, self)
+        report({'loss_e': loss_e.data}, self)
         loss_f = F.mean_squared_error(fi, f)
-        reporter.report({'loss_f': loss_f.data}, self)
+        report({'loss_f': loss_f.data}, self)
         loss = self.ce * loss_e + self.cf * loss_f
-        reporter.report({'loss': loss.data}, self)
+        report({'loss': loss.data}, self)
         return loss
 
 
