@@ -89,7 +89,7 @@ class ANI1EnergyGradLoss(Chain):
         for i in range(self.predictor.n_agents):
             fi, = grad([-en[i, :]], [ri], enable_double_backprop=True)
             assert ri.shape == fi.shape
-            loss_e += F.mean_squared_error(en[i], energies)
+            loss_e += F.mean_squared_error(en[i, :], energies)
             loss_f += F.mean_squared_error(fi, forces)
         loss_e /= self.predictor.n_agents
         loss_f /= self.predictor.n_agents
@@ -98,3 +98,40 @@ class ANI1EnergyGradLoss(Chain):
         loss = self.ce * loss_e + self.cf * loss_f
         report({'loss': loss.data}, self)
         return loss
+
+
+class EnergyForceVar(Chain):
+    """Energy + Grad."""
+
+    def __init__(self, predictor):
+        """Initializer.
+
+        Paramters
+        ---------
+        ce: coeffient for energy.
+        cf: coeffient for forces.
+
+        """
+        super().__init__()
+        with self.init_scope():
+            self.predictor = predictor
+
+    def __call__(self, positions, *args, **kwargs):
+        """Loss.
+
+        Parameters
+        ----------
+        target: Chain.
+        ri: positions.
+        e: Energy (ground truth.)
+        f: Force (ground truth.)
+
+        """
+        ri = Variable(positions)
+        # n_agents x n_batch
+        en = self.predictor(positions=ri, *args, **kwargs)
+        mean = F.mean(en, axis=0)
+        n2 = F.mean(en * en, axis=0)
+        var = n2 - mean * mean
+        force = grad([-mean], [ri])
+        return mean.data, force.data, var.data
