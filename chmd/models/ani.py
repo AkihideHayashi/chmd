@@ -17,13 +17,15 @@ def asarray(x):
 class ANI1(Chain):
     """ANI-1 energy calculator."""
 
-    def __init__(self, num_elements, aev_params, nn_params):
+    def __init__(self, num_elements, aev_params, nn_params, cutoff, pbc):
         """Initializer."""
         super().__init__()
         with self.init_scope():
             self.aev = ANI1AEV(num_elements, **aev_params)
             self.energy = ANI1AEV2Energy(num_elements, nn_params)
             self.shift = EnergyShifter(num_elements)
+        self.cutoff = cutoff
+        self.pbc = pbc
 
     def forward(self, cells, elements, positions, affiliations,
                 adjacents1=None, adjacents2=None, shifts=None):

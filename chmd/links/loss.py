@@ -50,7 +50,7 @@ class EnergyGradLoss(Chain):
         self.ce = ce
         self.cf = cf
 
-    def __call__(self, ri, e, f, *args, **kwargs):
+    def __call__(self, positions, energies, forces, *args, **kwargs):
         """Loss.
 
         Parameters
@@ -61,12 +61,13 @@ class EnergyGradLoss(Chain):
         f: Force (ground truth.)
 
         """
-        ri = Variable(ri)
+        ri = Variable(positions)
         en = self.predictor(ri, *args, **kwargs)
         fi, = grad([-en], [ri], enable_double_backprop=True)
-        loss_e = F.mean_squared_error(en, e)
+        assert ri.shape == fi.shape
+        loss_e = F.mean_squared_error(en, energies)
         report({'loss_e': loss_e.data}, self)
-        loss_f = F.mean_squared_error(fi, f)
+        loss_f = F.mean_squared_error(fi, forces)
         report({'loss_f': loss_f.data}, self)
         loss = self.ce * loss_e + self.cf * loss_f
         report({'loss': loss.data}, self)
