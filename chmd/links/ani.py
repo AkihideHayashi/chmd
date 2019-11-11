@@ -2,7 +2,7 @@
 import numpy as np
 import chainer
 import chainer.functions as F
-from chainer import Variable
+from chainer import Variable, Chain
 from chainer.backend import get_array_module
 from chmd.functions.neighbors import (duo_index, distance,
                                       distance_angle, neighbor_trios)
