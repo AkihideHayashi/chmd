@@ -55,7 +55,8 @@ def compute_shifts(n_repeat: np.ndarray):
     """
     assert n_repeat.shape == (3,)
     xp = get_array_module(n_repeat)
-    return cartesian_product(*[xp.arange(-i, i+1) for i in n_repeat])
+    dtype = chainer.config.dtype
+    return cartesian_product(*[xp.arange(-int(i), int(i+1), dtype=dtype) for i in n_repeat])
 
 
 def neighbor_duos(cells: np.ndarray, positions: np.ndarray,

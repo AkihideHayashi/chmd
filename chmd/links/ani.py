@@ -56,7 +56,7 @@ class ANI1AEV(object):
         i2_a = i2[in_rc_ang]
         j2_a = j2[in_rc_ang]
         s2_a = s2[in_rc_ang]
-        i3_a, j3_a = neighbor_trios(i2_a, j2_a, xp)
+        i3_a, j3_a = neighbor_trios(i2_a, j2_a)
         rij3, rik3, cosijk = distance_angle(
             cells, ri, i1, i2_a, j2_a, s2_a, i3_a, j3_a)
         g_ang = self.angular(rij3, rik3, cosijk, ei, i2_a, j2_a, i3_a, j3_a)

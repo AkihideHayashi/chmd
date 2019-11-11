@@ -26,7 +26,7 @@ class SummaryLoss(Chain):
                 skey = key.split('/')
                 if skey[:len(name)] == name:
                     observe['/'.join(skey[len(name):])] += reporter.observation[key]
-        for key in observe:
+        for key in list(observe.keys()):
             observe[f'mean/{key}'] = observe[key] / len(self.losses)
         report(observe, self)
         return loss
@@ -63,6 +63,7 @@ class EnergyGradLoss(Chain):
         """
         ri = Variable(positions)
         en = self.predictor(positions=ri, *args, **kwargs)
+        assert en.ndim == 1
         fi, = grad([-en], [ri], enable_double_backprop=True)
         assert ri.shape == fi.shape
         loss_e = F.mean_squared_error(en, energies)
