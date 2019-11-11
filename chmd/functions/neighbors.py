@@ -63,7 +63,7 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
     xp = get_array_module(cells)
     _, count = xp.unique(i1, return_counts=True)
     n_batch = len(count)
-    n_atoms = max(count)
+    n_atoms = int(max(count))
     head = cumsum_from_zero(count)
     index = xp.repeat(xp.arange(n_atoms)[xp.newaxis, :], n_batch, 0)
     padding = index >= count[:, xp.newaxis]
