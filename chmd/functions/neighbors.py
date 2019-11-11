@@ -5,36 +5,11 @@ import numpy as np
 import chainer.functions as F
 from chainer import Variable
 from chainer.backend import get_array_module
-
-
-def cartesian_product(*args, xp=np) -> np.ndarray:
-    """Cartesian product of arrays.
-
-    Examples
-    --------
-    >>> x = np.array([10, 20])
-    >>> y = np.array([1, 2, 3])
-    >>> cartesian_product(x, y)
-    ... [[10  1]
-         [10  2]
-         [10  3]
-         [20  1]
-         [20  2]
-         [20  3]]
-
-    """
-    n = len(args)
-    shapes = [tuple(len(x) if i == j else 1
-                    for i in range(n)) for j, x in enumerate(args)]
-    # x = tuple(a.reshape(shape) for a, shape in zip(args, shapes))
-    broad = xp.broadcast_arrays(*tuple(a.reshape(shape)
-                                       for a, shape in zip(args, shapes)))
-    cat = xp.concatenate([xp.expand_dims(b, -1) for b in broad], axis=-1)
-    return cat.reshape((-1, n))
+from chmd.math.xp import repeat_interleave, cumsum_from_zero, cartesian_product
 
 
 def number_repeats(cell: np.ndarray, pbc: np.ndarray,
-                   cutoff: np.ndarray, xp=np) -> np.ndarray:
+                   cutoff: np.ndarray) -> np.ndarray:
     """Calculate max repeat number for each direction.
 
     Parameters
@@ -60,6 +35,7 @@ def number_repeats(cell: np.ndarray, pbc: np.ndarray,
 
     """
     assert cell.shape == (3, 3) or cell.shape[1:] == (3, 3)
+    xp = get_array_module(cell)
     reciprocal_cell = xp.linalg.inv(cell)
     inv_lengths = xp.sqrt(xp.sum(reciprocal_cell ** 2, axis=-2))
     repeats = xp.ceil(cutoff * inv_lengths)
@@ -67,7 +43,7 @@ def number_repeats(cell: np.ndarray, pbc: np.ndarray,
     return repeats * pbc
 
 
-def compute_shifts(n_repeat: np.ndarray, xp=np):
+def compute_shifts(n_repeat: np.ndarray):
     """Compute shifts from the result of number_repeats or max of it.
 
     Parameters
@@ -76,13 +52,15 @@ def compute_shifts(n_repeat: np.ndarray, xp=np):
 
     """
     assert n_repeat.shape == (3,)
-    return cartesian_product(*[xp.arange(-i, i+1) for i in n_repeat], xp=xp)
+    xp = get_array_module(n_repeat)
+    return cartesian_product(*[xp.arange(-i, i+1) for i in n_repeat])
 
 
 def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
                   cutoff: float, repeat: np.ndarray,
-                  i1: np.ndarray, xp=np):
+                  i1: np.ndarray):
     """Concatenate version of neighbor_duos_batch."""
+    xp = get_array_module(cells)
     _, count = xp.unique(i1, return_counts=True)
     n_batch = len(count)
     n_atoms = max(count)
@@ -95,14 +73,14 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
     r[index_batch, :] = positions
     r = r.reshape((n_batch, n_atoms, 3))
     n, i, j, shift = neighbor_duos_batch(cells, r, cutoff,
-                                         repeat, padding, xp)
+                                         repeat, padding)
     head_n = head[n]
     return i + head_n, j + head_n, shift
 
 
 def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
                         cutoff: float, repeat: np.ndarray,
-                        padding=None, xp=np
+                        padding=None
                         ) -> Tuple[np.ndarray, np.ndarray,
                                    np.ndarray, np.ndarray]:
     """Compute pairs that are in neighbor.
@@ -111,7 +89,7 @@ def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
     And all batches
     """
     assert repeat.shape == (3,)
-    shifts = compute_shifts(repeat, xp=xp)
+    shifts = compute_shifts(repeat)
     n_batch = positions.shape[0]
     n_shifts = shifts.shape[0]
     n_atoms = positions.shape[1]
@@ -119,6 +97,7 @@ def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
     assert shifts.shape == (n_shifts, 3)
     assert positions.shape == (n_batch, n_atoms, 3)
 
+    xp = get_array_module(cells)
     if padding is None:
         padding = xp.full((n_batch, n_atoms), False)
     assert padding.shape == (n_batch, n_atoms)
@@ -154,7 +133,7 @@ def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
     return n[enabled], i[enabled], j[enabled], shifts[enabled]
 
 
-def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
+def neighbor_trios(i: np.ndarray, j: np.ndarray) -> np.ndarray:
     """Index for pair index.
 
     Parameters
@@ -167,12 +146,13 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray, xp=np) -> np.ndarray:
       b: j[b] == k3
 
     """
+    xp = get_array_module(i)
     assert i.shape == j.shape
     assert xp.all(xp.diff(i) >= 0)
     center, number = xp.unique(i, return_counts=True)
     m = int(xp.max(number))
     n = len(center)
-    base = cumsum_from_zero(number, xp)[repeat_interleave(number * number, xp)]
+    base = cumsum_from_zero(number)[repeat_interleave(number * number)]
     center = xp.broadcast_to(center[:, xp.newaxis, xp.newaxis], (n, m, m))
     number = xp.broadcast_to(number[:, xp.newaxis, xp.newaxis], (n, m, m))
     idx = xp.broadcast_to(xp.arange(m)[xp.newaxis], (n, m))
@@ -245,57 +225,19 @@ def distance_angle(cell: Variable, positions: Variable, i1: np.ndarray,
     return rij, rik, cos
 
 
-def repeat_interleave(n: np.ndarray, xp=np):
-    """Repeat arange.
-
-    >>> n = np.array([1, 1, 2, 2, 3, 4])
-    >>> center, number = np.unique(n, return_counts=True)
-    >>> number
-    ... [2 2 1 1]
-    >>> repeat_interleave(number)
-    ... [0 0 1 1 2 3]
-    """
-    n0 = len(n)
-    n1 = int(xp.max(n))
-    arange1, arange2, count = xp.broadcast_arrays(
-        xp.arange(n1)[xp.newaxis, :],
-        xp.arange(n0)[:, xp.newaxis],
-        n[:, xp.newaxis]
-    )
-    mask = count > arange1
-    ret = arange2[mask]
-    return ret
-
-
-def cumsum_from_zero(input_: np.ndarray, xp=np):
-    """Like xp.cumsum. But start from 0.
-
-    >>> n = np.array([1, 1, 2, 2, 3, 4])
-    >>> center, number = np.unique(n, return_counts=True)
-    >>> number
-    ... [2 2 1 1]
-    >>> cumsum_from_zero(number)
-    ... [0 2 4 5]
-    """
-    cumsum = xp.cumsum(input_, axis=0)
-    cumsum = xp.roll(cumsum, 1)
-    cumsum[0] = 0
-    return cumsum
-
-
-def duo_index(num_elements: int, xp=np):
+def duo_index(num_elements: int, xp):
     """Duo index."""
     e = xp.arange(num_elements)
-    p1, p2 = cartesian_product(e, e, xp=xp).T
+    p1, p2 = cartesian_product(e, e).T
     ret = xp.zeros([num_elements, num_elements], dtype=xp.int32)
     ret[p1, p2] = xp.arange(num_elements * num_elements)
     return ret
 
 
-def trio_index(num_elements: int, xp=np):
+def trio_index(num_elements: int, xp):
     """Trio index."""
     e = xp.arange(num_elements)
-    p1, p2, p3 = cartesian_product(e, e, e, xp=xp).T
+    p1, p2, p3 = cartesian_product(e, e, e).T
     ret = xp.zeros([num_elements, num_elements, num_elements], dtype=xp.int32)
     ret[p1, p2, p3] = xp.arange(num_elements * num_elements * num_elements)
     return ret

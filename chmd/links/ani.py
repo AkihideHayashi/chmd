@@ -2,10 +2,12 @@
 import numpy as np
 import chainer
 import chainer.functions as F
+from chainer import Variable
 from chainer.backend import get_array_module
 from chmd.functions.neighbors import (duo_index, distance,
                                       distance_angle, neighbor_trios)
 from chmd.functions.cutoffs import CosineCutoff
+from chmd.links.linear import AtomWiseParamNN
 
 
 class ANI1AEV(object):
@@ -210,3 +212,21 @@ class ANI1Angular(object):
 
         scattered = F.scatter_add(seed, center * numnum + ej3, flat_peaks)
         return scattered.reshape(n_solo, numnum * n1) / 2
+
+
+class ANI1AEV2Energy(Chain):
+    """ANI-1 energy calculator."""
+
+    def __init__(self, num_elements, nn_params):
+        """Initializer."""
+        super().__init__()
+        with self.init_scope():
+            self.nn = AtomWiseParamNN(**nn_params)
+
+    def forward(self, aev, ei, i1, n_batch):
+        """Forward."""
+        dtype = chainer.config.dtype
+        atomic = self.nn(aev, ei)
+        seed = self.xp.zeros((n_batch, atomic.shape[1]), dtype=dtype)
+        energy = F.scatter_add(seed, i1, atomic)[:, 0]
+        return energy
