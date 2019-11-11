@@ -24,8 +24,8 @@ class ANI1(Chain):
             self.aev = ANI1AEV(num_elements, **aev_params)
             self.energy = ANI1AEV2Energy(num_elements, nn_params)
             self.shift = EnergyShifter(num_elements)
-        self.cutoff = cutoff
-        self.pbc = pbc
+        self.add_persistent('cutoff', cutoff)
+        self.add_persistent('pbc', pbc)
 
     def forward(self, cells, elements, positions, affiliations,
                 adjacents1=None, adjacents2=None, shifts=None):
