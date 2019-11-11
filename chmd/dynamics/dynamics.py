@@ -36,7 +36,7 @@ def temperature(kinetic, dof):
     n_free: degree of freedom for each system.
 
     """
-    return kinetic * 2 / dof
+    return (kinetic * 2 / dof).astype(kinetic.dtype)
 
 
 class Extension(abc.ABC):
@@ -62,12 +62,13 @@ class Extension(abc.ABC):
 class Dynamics(abc.ABC):
     """Base class for dynamics."""
 
-    def __init__(self):
+    def __init__(self, energy_forces_eval):
         """Initialize."""
         self.__initialized = False
         self.extensions = []
         self.reporter = Reporter()
         self.observation = {}
+        self.energy_forces_eval = energy_forces_eval
 
     @abc.abstractmethod
     def update(self):
@@ -100,9 +101,8 @@ class Dynamics(abc.ABC):
 
 class VelocityVerlet(Dynamics):
     def __init__(self, batch: Batch, energy_force_eval: Callable, dt):
-        super().__init__()
+        super().__init__(energy_force_eval)
         self.batch: Batch = batch
-        self.energy_forces_eval = energy_force_eval
         self.accelerations = None
         self.delta_time = dt
 
@@ -143,9 +143,8 @@ class VelocityVerlet(Dynamics):
 
 class VelocityScaling(Dynamics):
     def __init__(self, batch: Batch, energy_force_eval: Callable, dt, kbt):
-        super().__init__()
+        super().__init__(energy_force_eval)
         self.batch: Batch = batch
-        self.energy_forces_eval = energy_force_eval
         self.accelerations = None
         self.delta_time = dt
         self.kbt = kbt
@@ -195,9 +194,8 @@ class NoseHooverChain(Dynamics):
                  thermostat_numbers, thermostat_targets,
                  tol=1e-8,
                  ):
-        super().__init__()
+        super().__init__(energy_force_eval)
         self.batch: Batch = batch
-        self.energy_forces_eval = energy_force_eval
         self.accelerations = None
         self.delta_time = dt
         self.tol = tol
