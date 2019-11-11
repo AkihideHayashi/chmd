@@ -62,7 +62,7 @@ class EnergyGradLoss(Chain):
 
         """
         ri = Variable(positions)
-        en = self.predictor(ri, *args, **kwargs)
+        en = self.predictor(positions=ri, *args, **kwargs)
         fi, = grad([-en], [ri], enable_double_backprop=True)
         assert ri.shape == fi.shape
         loss_e = F.mean_squared_error(en, energies)
