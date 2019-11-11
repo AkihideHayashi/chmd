@@ -133,5 +133,5 @@ class EnergyForceVar(Chain):
         mean = F.mean(en, axis=0)
         n2 = F.mean(en * en, axis=0)
         var = n2 - mean * mean
-        force = grad([-mean], [ri])
+        force, = grad([-mean], [ri])
         return mean.data, force.data, var.data
