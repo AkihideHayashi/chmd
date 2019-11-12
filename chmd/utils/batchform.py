@@ -2,6 +2,7 @@ r"""Support transform between some styles of having batch.
 
 listform: List[np.ndarray(n_atoms, [n_dims])]
 parallelform: np.ndarray(n_batch, n_atoms, [n_dims]), valid
+flattenform: np.ndarray(b_batch * n_atoms, [n_dim]), valid, affiliation
 seriesform: np.ndarray(\sum_{i}{n_atoms_i}, [n_dims]), affiliation
 """
 
@@ -49,19 +50,62 @@ class parallel_form(object):
 
     @staticmethod
     def from_list(lists, padding):
+        """Calculate parallel form from list form.
+
+        Returns
+        -------
+        parallels, valid
+
+        """
         valid = __class__.valid_from_listform(lists[0])
         for lst in lists:
             assert np.allclose(valid, __class__.valid_from_listform(lst))
         parallels = [__class__.parallel_from_list(
-            lst, valid, padding) for lst in lists]
+            lst, valid, pad) for lst, pad in zip(lists, padding)]
         return parallels, valid
 
     @staticmethod
     def from_series(series, affiliations, padding):
         valid = __class__.valid_from_affiliation(affiliations)
         parallels = [__class__.parallel_from_series(
-            s, affiliations, valid, padding) for s in series]
+            s, affiliations, valid, pad) for s, pad in zip(series, padding)]
         return parallels, valid
+
+
+class flatten_form(object):
+    """Flattend parallel form."""
+
+    @staticmethod
+    def from_parallel(parallels, valid):
+        """Flatten input arrays.
+
+        Returns
+        -------
+        arrays, valid, affiliation
+
+        """
+        xp = get_array_module(valid)
+        n_batch, n_atoms = valid.shape
+        flatten = [x.reshape(n_batch * n_atoms, *x.shape[2:])
+                   for x in parallels]
+        flatten_valid = valid.flatten()
+        affiliations = xp.broadcast_to(xp.arange(n_batch)[:, xp.newaxis],
+                                       (n_batch, n_atoms)).flatten()
+        return flatten, flatten_valid, affiliations
+
+    @staticmethod
+    def valid_affiliation_from_parallel(valid):
+        """Calculate flatten valid and affiliations.
+        Returns
+        -------
+        valid, affiliation
+        """
+        xp = get_array_module(valid)
+        n_batch, n_atoms = valid.shape
+        affiliations = xp.broadcast_to(xp.arange(n_batch)[:, xp.newaxis],
+                                       (n_batch, n_atoms)).flatten()
+        flatten_valid = valid.flatten()
+        return flatten_valid, affiliations
 
 
 class series_form(object):
@@ -90,6 +134,12 @@ class series_form(object):
 
     @staticmethod
     def from_list(lists):
+        """Calculate series form from list.
+
+        Returns
+        -------
+        series, affilation
+        """
         affiliations = __class__.affiliations_from_listform(lists[0])
         for lst in lists:
             assert np.allclose(affiliations,

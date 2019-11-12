@@ -3,16 +3,22 @@ import numpy as np
 import chainer
 from chainer import Chain, Variable, ChainList, grad, report
 import chainer.functions as F
-from chmd.links.ani import ANI1AEV, ANI1AEV2Energy
+from chmd.links.ani import ANI1AEV, ANI1AEV2EnergyFlattenForm
+from chmd.links.linear import AtomWiseParamNN
 from chmd.links.shifter import EnergyShifter
-from chmd.functions.neighbors import neighbor_duos, number_repeats
-from chmd.utils.devicestruct import DeviceStruct
+from chmd.functions.neighbors import neighbor_duos_to_flatten_form
+from chmd.utils.batchform import flatten_form
 
 
 def asarray(x):
     if isinstance(x, Variable):
         return x.data
     return x
+
+# 中の処理をseries formで処理するには隣接をseriese formで渡す必要があるが、（本当？）
+# parallel formでpositions, cellsを渡して置いて、隣接だけseriese formというのはややこしすぎる。
+# 従って、ani1の集計処理をflatten formにすることで隣接も座標もparallel formで渡すことにする。
+# TODO Energy shifterをparallel formかflatten formに対応させる。
 
 
 class ANI1(Chain):
@@ -23,32 +29,49 @@ class ANI1(Chain):
         """Initializer."""
         super().__init__()
         with self.init_scope():
-            self.aev = ANI1AEV(num_elements, **aev_params)
-            self.energies = ChainList(*[ANI1AEV2Energy(num_elements, nn_params)
-                                        for _ in range(n_agents)])
+            self.aev = ANI1AEV(num_elements, **aev_params)  # recieve flatten form and return flatten form.
+            self.energies = ChainList(*[AtomWiseParamNN(**nn_params)  
+                                        for _ in range(n_agents)])  # reciece flatten form.
             self.shift = EnergyShifter(num_elements)
         self.add_persistent('pbc', pbc)
         self.cutoff = cutoff
         self.n_agents = n_agents
 
-    def forward(self, cells, elements, positions,
-                i1, i2=None, j2=None, s2=None):
-        """Apply."""
+    def forward(self, cells, elements, positions, valid, i2=None, j2=None, s2=None):
+        """Apply. All inputs are assumed to be passed as parallel form.
+
+        However, i2, j2, s2 are assumed to be flatten from.
+        """
+        xp = self.xp
+        n_batch, n_atoms = elements.shape
+        # Fist, make all to flatten form.
+        v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
+        (ei, ri), v1, i1 = flatten_form.from_parallel([elements, positions], valid)
         if i2 is None or j2 is None or s2 is None:
-            repeats = number_repeats(cells, self.pbc, self.cutoff)
-            repeat = self.xp.max(repeats, axis=0)
-            (i2, j2, s2) = neighbor_duos(
-                asarray(cells), asarray(positions),
-                self.cutoff, repeat, i1,)
-        aev = self.aev(cells, positions, elements, i1, i2, j2, s2)
-        # parallel x batch
-        energy_nn = F.concat([en(aev, elements, i1, cells.shape[0])[None, :]
-                              for en in self.energies], axis=0)
-        assert energy_nn.shape[0] == self.n_agents
-        assert energy_nn.shape[1] == cells.shape[0]
-        assert energy_nn.ndim == 2
-        energy_linear = self.shift(elements, i1)
-        return energy_nn + energy_linear[None, :]
+            i2, j2, s2 = neighbor_duos_to_flatten_form(cells, positions,
+                                                       self.cutoff,
+                                                       self.pbc, valid)
+        # Second calculate AEV.
+        aev = self.aev(cells, ri, ei, i1, i2, j2, s2)
+        # Third calculate energies
+        shift = self.shift(ei)
+        # List[(n_batch * n_atoms)]
+
+        def calculate_atomic_valid(en):
+            atomic_novalid = en(aev, ei) + shift
+            atomic_valid = F.where(v1,
+                                   atomic_novalid,
+                                   xp.zeros_like(atomic_novalid.data))
+            return F.expand_dims(atomic_valid, 0)
+
+        # (n_parallel x n_batch * n_atoms)
+        atomic_energies = F.concat([calculate_atomic_valid(e)
+                                    for e in self.energies], axis=0)
+        molecular_energies = F.sum(
+            F.reshape(atomic_energies, (self.n_agents, n_batch, n_atoms)),
+            axis=2
+            )
+        return molecular_energies
 
 
 class ANI1EnergyGradLoss(Chain):

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torchani
 from chmd.utils.batchform import parallel_form
-from chmd.functions.neighbors import neighbor_duos, neighbor_trios, number_repeats, compute_shifts
+from chmd.functions.neighbors import neighbor_duos_to_parallel_form, neighbor_trios
 from chmd.math.xp import cumsum_from_zero, repeat_interleave
 
 
@@ -69,9 +69,7 @@ def neighbor_chmd(mols, cutoff, order_of_symbols):
     positions_lst = [atoms.positions for atoms in mols]
     (positions,), valid = parallel_form.from_list([positions_lst], 0.0)
     cells = np.concatenate([atoms.cell[np.newaxis, :, :] for atoms in mols], axis=0)
-    repeat = np.max(number_repeats(cells, pbc, cutoff), axis=0)
-    shifts = compute_shifts(repeat)
-    i2, j2, s2 = format_neighbor_duos(cells, positions, cutoff, shifts, valid)
+    i2, j2, s2 = neighbor_duos_to_parallel_form(cells, positions, cutoff, pbc, valid)
  
     ijs2 = np.concatenate([np.array([i2, j2]), s2.T], axis=0)
     i3, j3 = neighbor_trios(i2, j2)

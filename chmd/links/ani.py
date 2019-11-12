@@ -34,7 +34,7 @@ class ANI1AEV(object):
         self.angular = ANI1Angular(num_elements, **angular)
 
     def __call__(self, cells, ri, ei, i1, i2, j2, s2):
-        """Calculate full AEV.
+        """Calculate full AEV. Inputs are serial form or flatten form.
 
         Parameters
         ----------
@@ -214,10 +214,10 @@ class ANI1Angular(object):
         return scattered.reshape(n_solo, numnum * n1) / 2
 
 
-class ANI1AEV2Energy(Chain):
+class ANI1AEV2EnergySerieseForm(Chain):
     """ANI-1 energy calculator."""
 
-    def __init__(self, num_elements, nn_params):
+    def __init__(self, nn_params):
         """Initializer."""
         super().__init__()
         with self.init_scope():
@@ -230,3 +230,34 @@ class ANI1AEV2Energy(Chain):
         seed = self.xp.zeros((n_batch, atomic.shape[1]), dtype=dtype)
         energy = F.scatter_add(seed, i1, atomic)[:, 0]
         return energy
+
+
+class ANI1AEV2EnergyFlattenForm(Chain):
+    """ANI-1 energy calculator."""
+
+    def __init__(self, nn_params):
+        """Initializer."""
+        super().__init__()
+        with self.init_scope():
+            self.nn = AtomWiseParamNN(**nn_params)
+
+    def forward(self, aev, ei, valid):
+        """Forward. Inputs are assumed to be flatten form.
+
+        Parameters
+        ----------
+        aev: (n_batch * n_atoms, n_feature)
+        ei: (n_batch * n_atoms)
+        valid: (n_batch * n_atoms)
+
+        Returns
+        -------
+
+        Atomic energy (flatten form.)
+        """
+        xp = self.xp
+        atomic_all = self.nn(aev, ei)
+        n_features = atomic_all.shape[1]
+        assert n_features == 1
+        atomic = F.where(valid, atomic_all, xp.zeros_like(atomic_all.data))
+        return atomic

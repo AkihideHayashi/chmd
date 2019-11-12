@@ -24,9 +24,9 @@ class EnergyShifter(Link):
         self.coef[...] = np.array(coef, dtype=chainer.config.dtype)
         self.intercept[...] = intercept
 
-    def forward(self, ei, i1):
+    def forward(self, ei):
         """Forward."""
-        return linear_predict(self.coef, self.intercept, ei, i1, xp=self.xp)
+        return self.coef[ei] + self.intercept
 
 
 def count_elements_noconcat(elements, number_elements, xp=np):

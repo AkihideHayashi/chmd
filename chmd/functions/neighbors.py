@@ -57,9 +57,62 @@ def compute_shifts(n_repeat: np.ndarray):
     return cartesian_product(*[xp.arange(-int(i), int(i+1)) for i in n_repeat])
 
 
-# Good implementation. You can use it after test.
+def neighbor_duos_to_flatten_form(cells, positions, cutoff, pbc, valid):
+    """Calculate neighbors and format them. Input must be parallel form.
+
+    Returns
+    -------
+    i2, j2, s2
+
+    """
+    xp = get_array_module(cells)
+    repeat = xp.max(number_repeats(cells, pbc, cutoff), axis=0)
+    shifts = compute_shifts(repeat)
+    n, i, j, s = neighbor_duos(cells, positions, cutoff, shifts, valid)
+    n_batch, n_atoms = valid.shape
+    raising_bottom = (xp.arange(n_batch) * n_atoms)[n]
+    return i + raising_bottom, j + raising_bottom, s
+
+
+def neighbor_duos_to_serial_form(cells, positions, cutoff, pbc, valid):
+    """Calculate neighbors and format them. Input must be parallel form.
+
+    Not Tested Yet!!!!!
+    TODO: Write Test Code For Me!!!!
+    """
+    xp = get_array_module(cells)
+    repeat = xp.max(number_repeats(cells, pbc, cutoff), axis=0)
+    shifts = compute_shifts(repeat)
+    n, i, j, s = neighbor_duos(cells, positions, cutoff, shifts, valid)
+    natoms = xp.sum(valid, axis=1)
+    raising_bottom = cumsum_from_zero(natoms)[n]
+    return i + raising_bottom, j + raising_bottom, s
+
+
 def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
-                  shifts: np.ndarray, valid: np.ndarray):
+                  shifts: np.ndarray, valid: np.ndarray
+                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute neighbor pairs.
+
+    Parameters
+    ----------
+    cells: float[n_batch, n_dim, n_dim]
+    positions: float[n_batch, n_atoms, n_dim]
+    cutoff: float
+    shifts: float[n_shifts, n_dim]
+    valid: bool[n_batch, n_atoms]
+
+    Returns
+    -------
+    n, i, j, s
+
+    The k-th bond is the bond in the n[k]-th batch,
+    among which the i[k]-th bond and the j[k]-th bond.
+    for all 0 <= k < len(n),
+    | positions[n[k], i[k]] - (positions[n[k], j[k]] + s[k] @ cells[n[k]]) |
+    < cutoff
+
+    """
     xp = chainer.backend.get_array_module(cells)
     N = xp.newaxis
     n_batch, n_atoms, n_dim = positions.shape
@@ -122,7 +175,6 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray) -> np.ndarray:
 
     filt = idx1 != idx2
     return idx1[filt], idx2[filt]
-    # return center[filt], idx1[filt], idx2[filt]
 
 
 def distance(cells: Variable, positions: Variable,
@@ -197,79 +249,3 @@ def trio_index(num_elements: int, xp):
     ret = xp.zeros([num_elements, num_elements, num_elements], dtype=xp.int32)
     ret[p1, p2, p3] = xp.arange(num_elements * num_elements * num_elements)
     return ret
-
-# def neighbor_duos(cells: np.ndarray, positions: np.ndarray,
-#                   cutoff: float, repeat: np.ndarray,
-#                   i1: np.ndarray):
-#     """Concatenate version of neighbor_duos_batch."""
-#     xp = get_array_module(cells)
-#     _, count = xp.unique(i1, return_counts=True)
-#     n_batch = len(count)
-#     n_atoms = int(max(count))
-#     head = cumsum_from_zero(count)
-#     index = xp.repeat(xp.arange(n_atoms)[xp.newaxis, :], n_batch, 0)
-#     padding = index >= count[:, xp.newaxis]
-#     index_batch = (index +
-#                    (xp.arange(n_batch) * n_atoms)[:, xp.newaxis])[~padding]
-#     r = xp.zeros((n_batch * n_atoms, 3))
-#     r[index_batch, :] = positions
-#     r = r.reshape((n_batch, n_atoms, 3))
-#     n, i, j, shift = neighbor_duos_batch(cells, r, cutoff,
-#                                          repeat, padding)
-#     head_n = head[n]
-#     return i + head_n, j + head_n, shift
-
-
-# def neighbor_duos_batch(cells: np.ndarray, positions: np.ndarray,
-#                         cutoff: float, repeat: np.ndarray,
-#                         padding=None
-#                         ) -> Tuple[np.ndarray, np.ndarray,
-#                                    np.ndarray, np.ndarray]:
-#     """Compute pairs that are in neighbor.
-
-#     It only support the situation that all batches has similar cell.
-#     And all batches
-#     """
-#     assert repeat.shape == (3,)
-#     shifts = compute_shifts(repeat)
-#     n_batch = positions.shape[0]
-#     n_shifts = shifts.shape[0]
-#     n_atoms = positions.shape[1]
-#     assert cells.shape == (n_batch, 3, 3)
-#     assert shifts.shape == (n_shifts, 3)
-#     assert positions.shape == (n_batch, n_atoms, 3)
-
-#     xp = get_array_module(cells)
-#     if padding is None:
-#         padding = xp.full((n_batch, n_atoms), False)
-#     assert padding.shape == (n_batch, n_atoms)
-
-#     shifts, positions1, positions2 = xp.broadcast_arrays(
-#         shifts[xp.newaxis, xp.newaxis, xp.newaxis, :, :],
-#         positions[:, :, xp.newaxis, xp.newaxis, :],
-#         positions[:, xp.newaxis, :, xp.newaxis, :],
-#     )
-#     assert shifts.shape == (n_batch, n_atoms, n_atoms, n_shifts, 3)
-#     assert shifts.shape == positions1.shape == positions2.shape
-#     real_shifts = xp.sum(cells[:, xp.newaxis, xp.newaxis, xp.newaxis, :, :] *
-#                          shifts[:, :, :, :, :, xp.newaxis],
-#                          axis=-2
-#                          )
-#     assert real_shifts.shape == shifts.shape
-#     vectors = positions1 - positions2 - real_shifts
-#     assert vectors.shape == (n_batch, n_atoms, n_atoms, n_shifts, 3)
-#     distances = xp.sqrt(xp.sum(vectors * vectors, axis=4))
-#     assert distances.shape == (n_batch, n_atoms, n_atoms, n_shifts)
-#     i, j, n, _ = xp.broadcast_arrays(
-#         xp.arange(n_atoms)[xp.newaxis, :, xp.newaxis, xp.newaxis],
-#         xp.arange(n_atoms)[xp.newaxis, xp.newaxis, :, xp.newaxis],
-#         xp.arange(n_batch)[:, xp.newaxis, xp.newaxis, xp.newaxis],
-#         distances
-#     )
-
-#     in_cutoff = distances <= cutoff
-#     unique = ~((i == j) & xp.all(shifts == 0.0, axis=-1))
-#     not_dummy = (~padding[n, i]) & (~padding[n, j])
-#     enabled = in_cutoff & unique & not_dummy
-#     assert enabled.shape == (n_batch, n_atoms, n_atoms, n_shifts)
-#     return n[enabled], i[enabled], j[enabled], shifts[enabled]
