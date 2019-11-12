@@ -43,6 +43,8 @@ class ANI1(Chain):
         However, i2, j2, s2 are assumed to be flatten from.
         """
         xp = self.xp
+        if False:
+            cartesian_positions = F.sum(positions[:, :, :, None] * cells[:, None, :, :], axis=-2)
         n_batch, n_atoms = elements.shape
         # Fist, make all to flatten form.
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
