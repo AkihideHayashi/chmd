@@ -2,10 +2,11 @@
 """Test chmd.neighbors by comparing with torchani."""
 from unittest import TestCase
 import numpy as np
-from chmd.neighbors import number_repeats, neighbor_duos, neighbor_trios
-from chmd.atoms import Atoms, get_items
 import torch
 import torchani
+from chmd.utils.batchform import parallel_form
+from chmd.functions.neighbors import neighbor_duos, neighbor_trios, number_repeats, compute_shifts
+from chmd.math.xp import cumsum_from_zero, repeat_interleave
 
 
 def fill(x, default):
@@ -55,28 +56,28 @@ def neighbor_torch(mols, cutoff, order_of_symbols):
     ijk3 = sort2(np.array([i3, j3, k3]))
     return ijs2, ijk3
 
+def format_neighbor_duos(cells, positions, cutoff, shifts, valid):
+    dof = np.sum(valid, axis=1)
+    head = cumsum_from_zero(dof)
+    head = np.arange(positions.shape[0]) * positions.shape[1]
+    n2, i2, j2, s2 = neighbor_duos(cells, positions, cutoff, shifts, valid)
+    return i2 + head[n2], j2 + head[n2], s2
 
 def neighbor_chmd(mols, cutoff, order_of_symbols):
     """Calculate duo and trio using chmd."""
-    def inner(cells, positions, elements, solo):
-        i1 = solo
-        index_batch = calc_index_batch(i1)
-        pbc = mols[0].pbc
-        repeat = np.max(number_repeats(cells, pbc, cutoff), axis=0)
-        i2, j2, s2 = neighbor_duos(cells, positions, cutoff, repeat, i1)
-        ijs2 = sort2(np.concatenate(
-            [np.array([index_batch[i2], index_batch[j2]]), s2.T], axis=0))
-        a, b = neighbor_trios(i2, j2)
-        c = i2[a]
-        i3, j3, k3 = c, j2[a], j2[b]
-        ijk3 = sort2(
-            np.array([index_batch[i3], index_batch[j3], index_batch[k3]]))
-        return ijs2, ijk3
-
-    for mol in mols:
-        mol.set_elements(order_of_symbols)
-        # mol.set_pairs(cutoff)
-    return inner(**get_items(mols, ["cells", "positions", "elements", "solo"]))
+    pbc = np.array(mols[0].pbc)
+    positions_lst = [atoms.positions for atoms in mols]
+    (positions,), valid = parallel_form.from_list([positions_lst], 0.0)
+    cells = np.concatenate([atoms.cell[np.newaxis, :, :] for atoms in mols], axis=0)
+    repeat = np.max(number_repeats(cells, pbc, cutoff), axis=0)
+    shifts = compute_shifts(repeat)
+    i2, j2, s2 = format_neighbor_duos(cells, positions, cutoff, shifts, valid)
+ 
+    ijs2 = np.concatenate([np.array([i2, j2]), s2.T], axis=0)
+    i3, j3 = neighbor_trios(i2, j2)
+    assert np.all(i2[j3] == i2[i3])
+    ijk3 = sort2(np.array([i2[i3], j2[i3], j2[j3]]))
+    return ijs2, ijk3
 
 
 def calc_index_batch(i1, xp=np):
@@ -121,8 +122,7 @@ class TestPairs(TestCase):
                     ijs2_torch, ijk3_torch = neighbor_torch(mols, cutoff,
                                                             order_of_symbols)
 
-                    mols_chmd = [Atoms.from_ase(mol) for mol in mols]
-                    ijs2_chmd, ijk3_chmd = neighbor_chmd(mols_chmd, cutoff,
+                    ijs2_chmd, ijk3_chmd = neighbor_chmd(mols, cutoff,
                                                          order_of_symbols)
                     self.assertTrue(np.allclose(ijs2_chmd, ijs2_torch))
                     self.assertTrue(np.allclose(ijk3_chmd, ijk3_torch))

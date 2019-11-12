@@ -62,13 +62,16 @@ class Extension(abc.ABC):
 class Dynamics(abc.ABC):
     """Base class for dynamics."""
 
-    def __init__(self, energy_forces_eval):
+    def __init__(self, energy_forces_eval, name='md'):
         """Initialize."""
         self.__initialized = False
+        self.name = name
         self.extensions = []
         self.reporter = Reporter()
         self.observation = {}
         self.energy_forces_eval = energy_forces_eval
+        self.reporter.add_observer(self.name, self)
+        self.reporter.add_observer(energy_forces_eval.name, energy_forces_eval)
 
     @abc.abstractmethod
     def update(self):
@@ -100,8 +103,9 @@ class Dynamics(abc.ABC):
 
 
 class VelocityVerlet(Dynamics):
-    def __init__(self, batch: Batch, energy_force_eval: Callable, dt):
-        super().__init__(energy_force_eval)
+    def __init__(self, batch: Batch, energy_forces_eval: Callable,
+                 dt, name='md'):
+        super().__init__(energy_forces_eval, name=name)
         self.batch: Batch = batch
         self.accelerations = None
         self.delta_time = dt
@@ -142,8 +146,9 @@ class VelocityVerlet(Dynamics):
 
 
 class VelocityScaling(Dynamics):
-    def __init__(self, batch: Batch, energy_force_eval: Callable, dt, kbt):
-        super().__init__(energy_force_eval)
+    def __init__(self, batch: Batch, energy_forces_eval: Callable,
+                 dt, kbt, name='md'):
+        super().__init__(energy_forces_eval, name=name)
         self.batch: Batch = batch
         self.accelerations = None
         self.delta_time = dt
@@ -189,12 +194,13 @@ class VelocityScaling(Dynamics):
 
 
 class NoseHooverChain(Dynamics):
-    def __init__(self, batch: Batch, energy_force_eval: Callable, dt,
+    def __init__(self, batch: Batch, energy_forces_eval: Callable, dt,
                  thermostat_kbt, thermostat_timeconst,
                  thermostat_numbers, thermostat_targets,
                  tol=1e-8,
+                 name='md'
                  ):
-        super().__init__(energy_force_eval)
+        super().__init__(energy_forces_eval, name='md')
         self.batch: Batch = batch
         self.accelerations = None
         self.delta_time = dt
@@ -221,7 +227,8 @@ class NoseHooverChain(Dynamics):
         super().initialize()
         self.accelerations = self.batch.xp.zeros_like(self.positions)
         self.energy_forces_eval(self.batch)
-        self.accelerations[self.is_atom] = (self.batch.forces / self.batch.masses[:, None]).flatten()
+        self.accelerations[self.is_atom] = (
+            self.batch.forces / self.batch.masses[:, None]).flatten()
 
     def update(self):
         xp = self.batch.xp
@@ -257,7 +264,8 @@ class NoseHooverChain(Dynamics):
         will_report = dict(self.batch.items())
         will_report['temperatures'] = temperature(
             self.batch.kinetic_energies, self.batch.dof)
-        will_report['conserved'] = nose_hoover_conserve(self.positions, self.velocities, self.masses, self.thermostat_numbers, self.thermostat_targets, self.thermostat_kbt, self.batch.potential_energies, self.affiliations)
+        will_report['conserved'] = nose_hoover_conserve(self.positions, self.velocities, self.masses, self.thermostat_numbers,
+                                                        self.thermostat_targets, self.thermostat_kbt, self.batch.potential_energies, self.affiliations)
         report(will_report)
 
 
