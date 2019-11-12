@@ -28,15 +28,16 @@ from chmd.utils.batchform import parallel_form, flatten_form, series_form
 
 def concat_converter(batch, device=None, padding=None):
     """Not tested yet."""
-    lst_keys = ['positions', 'elements', 'energy', 'forces']
-    paddings = [0.0, -1, 0.0, 0.0]
-    out_keys = ['positions', 'elements', 'energies', 'forces']
+    lst_keys = ['positions', 'elements', 'forces']
+    paddings = [0.0, -1, 0.0]
     lst = [[atoms[key] for atoms in batch] for key in lst_keys]
     cells = np.array([atoms['cell'] for atoms in batch])
+    energies = np.array([atoms['energy'] for atoms in batch])
     parallels, valid = parallel_form.from_list(lst, paddings)
-    return_dict = {key: x for key, x in zip(out_keys, parallels)}
+    return_dict = {key: x for key, x in zip(lst_keys, parallels)}
     return_dict['valid'] = valid
     return_dict['cells'] = cells
+    return_dict['energies'] = energies
     if 'i2' in batch and 'j2' in batch and 's2' in batch[0]:
         n_batch, n_atoms = parallels[1].shape[:2]
         raising_bottom = np.arange(n_batch) * n_atoms
