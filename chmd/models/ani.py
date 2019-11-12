@@ -48,9 +48,11 @@ class ANI1(Chain):
         n_batch, n_atoms = elements.shape
         # Fist, make all to flatten form.
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
-        (ei, ri), v1, i1 = flatten_form.from_parallel([elements, positions], valid)
+        (ei, ri), v1, i1 = flatten_form.from_parallel([elements, positions],
+                                                      valid)
         if i2 is None or j2 is None or s2 is None:
-            i2, j2, s2 = neighbor_duos_to_flatten_form(asarray(cells), asarray(positions),
+            i2, j2, s2 = neighbor_duos_to_flatten_form(asarray(cells),
+                                                       asarray(positions),
                                                        self.cutoff,
                                                        self.pbc, valid)
             assert False
@@ -61,7 +63,7 @@ class ANI1(Chain):
         # List[(n_batch * n_atoms)]
 
         def calculate_atomic_valid(en):
-            atomic_novalid = en(aev, ei) + shift
+            atomic_novalid = F.squeeze(en(aev, ei), axis=1) + shift
             atomic_valid = F.where(v1,
                                    atomic_novalid,
                                    xp.zeros_like(atomic_novalid.data))
