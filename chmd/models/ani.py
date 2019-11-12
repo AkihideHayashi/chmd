@@ -48,9 +48,10 @@ class ANI1(Chain):
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
         (ei, ri), v1, i1 = flatten_form.from_parallel([elements, positions], valid)
         if i2 is None or j2 is None or s2 is None:
-            i2, j2, s2 = neighbor_duos_to_flatten_form(cells, positions,
+            i2, j2, s2 = neighbor_duos_to_flatten_form(asarray(cells), asarray(positions),
                                                        self.cutoff,
                                                        self.pbc, valid)
+            assert False
         # Second calculate AEV.
         aev = self.aev(cells, ri, ei, i1, i2, j2, s2)
         # Third calculate energies

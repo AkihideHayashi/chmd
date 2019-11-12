@@ -38,7 +38,7 @@ def concat_converter(batch, device=None, padding=None):
     return_dict['valid'] = valid
     return_dict['cells'] = cells
     return_dict['energies'] = energies
-    if 'i2' in batch and 'j2' in batch and 's2' in batch[0]:
+    if 'i2' in batch[0] and 'j2' in batch[0] and 's2' in batch[0]:
         n_batch, n_atoms = parallels[1].shape[:2]
         raising_bottom = np.arange(n_batch) * n_atoms
         (i2_seed, j2_seed, s2), aff = series_form.from_list([
