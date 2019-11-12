@@ -41,10 +41,20 @@ class ANI1(Chain):
         """Apply. All inputs are assumed to be passed as parallel form.
 
         However, i2, j2, s2 are assumed to be flatten from.
+
+        Parameters
+        ----------
+        cells: (n_batch x n_dim x n_dim)
+        elements: (n_batch x n_atoms)
+        positions: (n_batch x n_atoms x n_dim) direct coordinate.
+        valid: bool(n_batch x n_atoms) True if is_atom. False if dummy or padding.
+        i2, j2: (n_bond) flatten form based.
+        s2: (n_bond, n_free) flatten form based.
         """
         xp = self.xp
         if False:
-            cartesian_positions = F.sum(positions[:, :, :, None] * cells[:, None, :, :], axis=-2)
+            in_cell_positions = positions - positions // 1
+            cartesian_positions = F.sum(in_cell_positions[:, :, :, None] * cells[:, None, :, :], axis=-2)
         n_batch, n_atoms = elements.shape
         # Fist, make all to flatten form.
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)

@@ -200,6 +200,8 @@ class NoseHooverChain(Dynamics):
                  tol=1e-8,
                  name='md'
                  ):
+        import warnings
+        warnings.warn('Now, nose hoover is assumed to handle seriese form.')
         super().__init__(energy_forces_eval, name='md')
         self.batch: Batch = batch
         self.accelerations = None
