@@ -193,7 +193,7 @@ class ANI1EnergyGradLoss(Chain):
         """
         ri = Variable(positions)
         # n_agents x n_batch
-        en = self.predictor(positions=ri, *args, **kwargs)
+        en = self.predictor(cells=cells, positions=ri, *args, **kwargs)
         assert en.ndim == 2
         loss_e = 0.0
         loss_f = 0.0
