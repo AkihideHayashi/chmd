@@ -1,4 +1,5 @@
 """ANI-1."""
+from abc import ABC, abstractproperty, abstractmethod
 import numpy as np
 import chainer
 from chainer import Chain, Variable, ChainList, grad, report
@@ -9,6 +10,7 @@ from chmd.links.shifter import EnergyShifter
 from chmd.functions.neighbors import neighbor_duos_to_flatten_form
 from chmd.utils.batchform import flatten_form
 from chmd.math.lattice import direct_to_cartesian_chainer
+from chmd.dynamics.batch import AbstractBatch
 
 
 def asarray(x):
@@ -22,11 +24,81 @@ def asarray(x):
 # TODO Energy shifterをparallel formかflatten formに対応させる。
 
 
+class ANI1Batch(AbstractBatch):
+
+    @abstractproperty
+    def positions(self):
+        ...
+
+    @abstractproperty
+    def elements(self):
+        ...
+
+    @abstractproperty
+    def cells(self):
+        ...
+
+    @abstractproperty
+    def valid(self):
+        ...
+
+    @abstractproperty
+    def potential_energies(self):
+        ...
+
+    @potential_energies.setter
+    def potential_energies(self, _):
+        ...
+
+    @abstractproperty
+    def forces(self):
+        ...
+
+    @forces.setter
+    def forces(self, _):
+        ...
+
+    @abstractproperty
+    def variance_potential_energies(self):
+        ...
+
+    @variance_potential_energies.setter
+    def variance_potential_energies(self, _):
+        ...
+
+    @abstractmethod
+    def xp(self):
+        ...
+
+
+class ANI1ForceField(object):
+    def __init__(self, params, path, neighbor_list, name='ANI1'):
+        self.model = ANI1(**params)
+        chainer.serializers.load_npz(path, self.model)
+        self.neighbor_list = neighbor_list
+        self.name = name
+    
+    def __call__(self, batch: ANI1Batch):
+        i2, j2, s2 = self.neighbor_list(batch)
+        positions = Variable(batch.positions)
+        elements = batch.elements
+        cells = Variable(batch.cells)
+        valid = batch.valid
+        energies = self.model(cells, elements, positions, valid, i2, j2, s2)
+        mean = F.sum(energies, axis=0)
+        mean2 = F.sum(energies * energies, axis=0)
+        var = mean2 - mean
+        forces, = grad([-mean], [positions])
+        batch.potential_energies = mean.data
+        batch.forces = forces.data
+        batch.variance_potential_energies = var.data
+
+
 class ANI1(Chain):
     """ANI-1 energy calculator."""
 
     def __init__(self, num_elements, aev_params, nn_params,
-                 cutoff, pbc, n_agents):
+                 cutoff, pbc, n_agents, order):
         """Initializer."""
         super().__init__()
         with self.init_scope():
@@ -37,9 +109,9 @@ class ANI1(Chain):
         self.add_persistent('pbc', pbc)
         self.cutoff = cutoff
         self.n_agents = n_agents
+        self.order = order
 
-    def forward(self, cells, elements, positions, valid,
-                i2=None, j2=None, s2=None):
+    def forward(self, cells, elements, positions, valid, i2, j2, s2):
         """Apply. All inputs are assumed to be passed as parallel form.
 
         However, i2, j2, s2 are assumed to be flatten from.
@@ -53,6 +125,10 @@ class ANI1(Chain):
         i2, j2: (n_bond) flatten form based.
         s2: (n_bond, n_free) flatten form based.
 
+        Returns
+        -------
+        energies: (n_parallel, n_batch)
+
         """
         xp = self.xp
         in_cell_positions = positions - positions // 1
@@ -63,13 +139,6 @@ class ANI1(Chain):
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
         (ei, ri), v1, i1 = flatten_form.from_parallel(
             [elements, cartesian_positions], valid)
-        if i2 is None or j2 is None or s2 is None:
-            i2, j2, s2 = neighbor_duos_to_flatten_form(
-                asarray(cells),
-                asarray(cartesian_positions),
-                self.cutoff,
-                self.pbc, valid)
-            assert False
         # Second calculate AEV.
         aev = self.aev(cells, ri, ei, i1, i2, j2, s2)
         # Third calculate energies

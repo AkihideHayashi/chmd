@@ -52,6 +52,10 @@ def compute_shifts(n_repeat: np.ndarray):
     ----------
     n_repeat : (n_dim,) result of number repeats
 
+    Returns
+    -------
+    shifts: (n_shifts, n_dim)
+
     """
     xp = get_array_module(n_repeat)
     return cartesian_product(*[xp.arange(-int(i), int(i+1)) for i in n_repeat])
