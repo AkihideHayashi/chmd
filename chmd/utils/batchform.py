@@ -8,7 +8,7 @@ seriesform: np.ndarray(\sum_{i}{n_atoms_i}, [n_dims]), affiliation
 
 import numpy as np
 from chainer.backend import get_array_module
-from chmd.math.xp import repeat_interleave, scatter_add
+from chmd.math.xp import repeat_interleave
 
 
 class parallel_form(object):

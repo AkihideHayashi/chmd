@@ -8,6 +8,7 @@ from chmd.links.linear import AtomWiseParamNN
 from chmd.links.shifter import EnergyShifter
 from chmd.functions.neighbors import neighbor_duos_to_flatten_form
 from chmd.utils.batchform import flatten_form
+from chmd.math.lattice import direct_to_cartesian_chainer
 
 
 def asarray(x):
@@ -37,7 +38,8 @@ class ANI1(Chain):
         self.cutoff = cutoff
         self.n_agents = n_agents
 
-    def forward(self, cells, elements, positions, valid, i2=None, j2=None, s2=None):
+    def forward(self, cells, elements, positions, valid,
+                i2=None, j2=None, s2=None):
         """Apply. All inputs are assumed to be passed as parallel form.
 
         However, i2, j2, s2 are assumed to be flatten from.
@@ -47,24 +49,26 @@ class ANI1(Chain):
         cells: (n_batch x n_dim x n_dim)
         elements: (n_batch x n_atoms)
         positions: (n_batch x n_atoms x n_dim) direct coordinate.
-        valid: bool(n_batch x n_atoms) True if is_atom. False if dummy or padding.
+        valid: bool(n_batch x n_atoms) True if is_atom. False if dummy.
         i2, j2: (n_bond) flatten form based.
         s2: (n_bond, n_free) flatten form based.
+
         """
         xp = self.xp
-        if False:
-            in_cell_positions = positions - positions // 1
-            cartesian_positions = F.sum(in_cell_positions[:, :, :, None] * cells[:, None, :, :], axis=-2)
+        in_cell_positions = positions - positions // 1
+        cartesian_positions = direct_to_cartesian_chainer(
+            cells, in_cell_positions)
         n_batch, n_atoms = elements.shape
         # Fist, make all to flatten form.
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
-        (ei, ri), v1, i1 = flatten_form.from_parallel([elements, positions],
-                                                      valid)
+        (ei, ri), v1, i1 = flatten_form.from_parallel(
+            [elements, cartesian_positions], valid)
         if i2 is None or j2 is None or s2 is None:
-            i2, j2, s2 = neighbor_duos_to_flatten_form(asarray(cells),
-                                                       asarray(positions),
-                                                       self.cutoff,
-                                                       self.pbc, valid)
+            i2, j2, s2 = neighbor_duos_to_flatten_form(
+                asarray(cells),
+                asarray(cartesian_positions),
+                self.cutoff,
+                self.pbc, valid)
             assert False
         # Second calculate AEV.
         aev = self.aev(cells, ri, ei, i1, i2, j2, s2)

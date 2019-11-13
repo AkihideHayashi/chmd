@@ -10,24 +10,30 @@ from chmd.dynamics.nosehoover import (setup_nose_hoover,
                                       nose_hoover_conserve
                                       )
 from chmd.dynamics.batch import Batch
+from chmd.math.lattice import direct_to_cartesian
 
 
-def kinetic_energy(n, m, v, i1):
-    """Calculate kinetic energy.
+def calculate_kinetic_energies(cells, velocities, masses, valid):
+    """All parameters are assumed to be parallel format.
 
     Parameters
     ----------
-    n: number of systems.
-    m: mass
-    v: velocity
-    i1: index of system.57
-
+    cells: float(n_batch, n_dim, n_dim)
+    velocities: float(n_batch, n_atoms, n_dim) direct
+    masses: float(n_batch, n_atoms)
+    valid: bool(n_batch, n_atoms)
     """
-    xp = get_array_module(v)
-    return scatter_add_to_zero(n, i1, xp.sum(0.5 * m[:, None] * v * v, axis=1))
+    n_batch, n_atoms, n_dim = velocities.shape
+    xp = get_array_module(cells)
+    v = direct_to_cartesian(cells, velocities)
+    m = masses
+    atomic = xp.where(valid,
+                      0.5 * m[:, :, xp.newaxis] * v * v,
+                      xp.zeros_like(v))
+    return xp.sum(atomic.reshape((n_batch, n_atoms * n_dim)), axis=1)
 
 
-def temperature(kinetic, dof):
+def calculate_temperature(kinetic, dof):
     """Calculate temperature.
 
     Parameters
@@ -105,6 +111,14 @@ class Dynamics(abc.ABC):
 class VelocityVerlet(Dynamics):
     def __init__(self, batch: Batch, energy_forces_eval: Callable,
                  dt, name='md'):
+        """Initializer.
+
+        batch: assumed to have positions, velocities, energies,
+               forces, affiliations.
+        energy_forces_eval
+        dt
+
+        """
         super().__init__(energy_forces_eval, name=name)
         self.batch: Batch = batch
         self.accelerations = None
@@ -113,19 +127,19 @@ class VelocityVerlet(Dynamics):
     def initialize(self):
         super().initialize()
         self.energy_forces_eval(self.batch)
-        self.accelerations = self.batch.forces / self.batch.masses[:, None]
+        self.accelerations = self.batch.forces / self.batch.masses[:, :, None]
 
     def update(self):
         xp = self.batch.xp
-        i1 = self.batch.affiliations
         x_old = self.batch.positions
         v_old = self.batch.velocities
         a_old = self.accelerations
         dof = self.batch.dof
-        m = self.batch.masses[:, xp.newaxis]
+        m = self.batch.masses[:, :, xp.newaxis]
+        dt = self.delta_time[:, xp.newaxis, xp.newaxis]
 
-        dt = self.delta_time[i1][:, xp.newaxis]
         x_new = x_old + v_old * dt + 0.5 * a_old * dt * dt
+        x_new = x_new - x_new // 1
         self.batch.positions = x_new
         self.batch.times = self.batch.times + self.delta_time
         self.energy_forces_eval(self.batch)
@@ -134,14 +148,19 @@ class VelocityVerlet(Dynamics):
         self.batch.positions = x_new
         self.batch.velocities = v_new
         self.accelerations = a_new
-        self.batch.kinetic_energies = kinetic_energy(len(dof),
-                                                     self.batch.masses,
-                                                     v_new, i1)
+        self.batch.kinetic_energies = calculate_kinetic_energies(
+            self.batch.cells,
+            v_new,
+            self.batch.masses,
+            self.batch.valid
+        )
         self.batch.mechanical_energies = (self.batch.kinetic_energies +
                                           self.batch.potential_energies)
         will_report = dict(self.batch.items())
-        will_report['temperature'] = temperature(
-            self.batch.kinetic_energies, dof)
+        will_report['temperature'] = calculate_temperature(
+            self.batch.kinetic_energies,
+            dof
+        )
         report(will_report)
 
 
@@ -170,6 +189,7 @@ class VelocityScaling(Dynamics):
 
         dt = self.delta_time[i1][:, xp.newaxis]
         x_new = x_old + v_old * dt + 0.5 * a_old * dt * dt
+        x_new = x_new - x_new // 1
         self.batch.positions = x_new
         self.batch.times = self.batch.times + self.delta_time
         self.energy_forces_eval(self.batch)
@@ -269,188 +289,3 @@ class NoseHooverChain(Dynamics):
         will_report['conserved'] = nose_hoover_conserve(self.positions, self.velocities, self.masses, self.thermostat_numbers,
                                                         self.thermostat_targets, self.thermostat_kbt, self.batch.potential_energies, self.affiliations)
         report(will_report)
-
-
-# class VelocityVerlet(Dynamics):
-#     """Implementation of velocity verlet algorithm."""
-#
-#     def __init__(self, positions, velocities, masses, t0, dt, energy_forces,
-#                  name='md'):
-#         """Initialize."""
-#         super().__init__()
-#         for x, v, m in zip(positions, velocities, masses):
-#             assert x.shape == v.shape == m.shape
-#         assert len(positions) == len(velocities) == len(masses)
-#         assert len(positions) == len(t0) == len(dt)
-#         xp = get_array_module(positions[0])
-#         n_free = xp.array([len(p) for p in positions])
-#         self.i1 = repeat_interleave(n_free)
-#         self.positions = xp.concatenate(positions)
-#         self.velocities = xp.concatenate(velocities)
-#         self.masses = xp.concatenate(masses)
-#         self.time = t0
-#         self.delta_time = dt
-#         self.accelerations = None
-#         self.name = name
-#         self.energy_forces = energy_forces
-#
-#     def initialize(self):
-#         """Initialize accelerations."""
-#         _, forces = self.energy_forces(self.time, self.positions)
-#         self.accelerations = forces / self.masses
-#
-#     def update(self):
-#         """Update all as velocity verlet."""
-#         x = self.positions
-#         v = self.velocities
-#         a = self.accelerations
-#         m = self.masses
-#         dt = self.delta_time
-#         t = self.time
-#         i1 = self.i1
-#
-#         new_x = x + v * dt[i1] + 0.5 * a * dt[i1] * dt[i1]
-#         new_t = t + dt
-#         potential, forces = self.energy_forces(new_t, new_x)
-#         new_a = forces / m
-#         new_v = v + 0.5 * (a + new_a) * dt[i1]
-#         self.positions = new_x
-#         self.velocities = new_v
-#         self.accelerations = new_a
-#         self.time = self.time + dt
-#         kinetic = kinetic_energy(len(self.n_free), m, new_v, i1)
-#         report({'time': self.time,
-#                 'positions': self.positions,
-#                 'velocities': self.velocities,
-#                 'accelerations': self.accelerations,
-#                 'potential': potential,
-#                 'forces': forces,
-#                 'kinetic': kinetic,
-#                 'energy': kinetic + potential,
-#                 'conserved': kinetic + potential,
-#                 'temperature': temperature(kinetic, self.n_free)
-#                 }, self)
-#
-#
-# class VelocityScaling(VelocityVerlet):
-#     """Scale velocity to become selected temperature."""
-#
-#     def __init__(self, positions, velocities, masses,
-#                  t0, dt, kbt, energy_forces,
-#                  extentions=None, name='md'):
-#         """Initialize."""
-#         super().__init__(positions, velocities, masses,
-#                          t0, dt, energy_forces, extentions, name)
-#         self.kbt = kbt
-#
-#     def update(self):
-#         """Update all as velocity verlet."""
-#         x = self.positions
-#         v = self.velocities
-#         a = self.accelerations
-#         m = self.masses
-#         dt = self.delta_time
-#         t = self.time
-#         i1 = self.i1
-#
-#         new_x = x + v * dt[i1] + 0.5 * a * dt[i1] * dt[i1]
-#         new_t = t + dt
-#         potential, forces = self.energy_forces(new_t, new_x)
-#         new_a = forces / m
-#         tmp_v = v + 0.5 * (a + new_a) * dt[i1]
-#         tmp_kinetic = kinetic_energy(len(self.n_free), m, tmp_v, i1)
-#         tmp_kbt = temperature(tmp_kinetic, self.n_free)
-#         new_v = tmp_v * np.sqrt(self.kbt / tmp_kbt)[self.i1]
-#         self.positions = new_x
-#         self.velocities = new_v
-#         self.accelerations = new_a
-#         self.time = self.time + dt
-#         kinetic = kinetic_energy(len(self.n_free), m, new_v, i1)
-#         kbt = temperature(kinetic, self.n_free)
-#
-#         report({'time': self.time,
-#                 'positions': self.positions,
-#                 'velocities': self.velocities,
-#                 'accelerations': self.accelerations,
-#                 'potential': potential,
-#                 'forces': forces,
-#                 'kinetic': kinetic,
-#                 'energy': kinetic + potential,
-#                 'conserved': None,
-#                 'temperature': kbt,
-#                 }, self)
-#
-#
-# class NoseHooverChain(VelocityVerlet):
-#     """Nose Hoover chain."""
-#
-#     def __init__(self, positions, velocities, masses,
-#                  t0, dt, kbt, therm_time, therm_number, therm_target,
-#                  energy_forces, extentions=None, name='md', tol=1e-8):
-#         """Initialize.
-#
-#         Parameters
-#         ----------
-#         tol: tolerance for accelerate-velocity scf.
-#
-#         """
-#         (extended_postions,
-#          extended_velocities,
-#          extended_masses,
-#          self.therm_number,
-#          self.therm_target,
-#          self.kbt,
-#          is_atom) = setup_nose_hoover(
-#              positions, velocities, masses,
-#              therm_number, therm_target, kbt, therm_time)
-#         super().__init__(extended_postions,
-#                          extended_velocities,
-#                          extended_masses,
-#                          t0, dt, energy_forces, extentions, name, is_atom)
-#         self.tol = tol
-#
-#     def update(self):
-#         """Update all as velocity verlet."""
-#         x = self.positions
-#         v = self.velocities
-#         a = self.accelerations
-#         m = self.masses
-#         dt = self.delta_time
-#         t = self.time
-#         i1 = self.extended_i1
-#         is_atom = self.is_atom
-#         xp = get_array_module(x)
-#
-#         new_x = x + v * dt[i1] + 0.5 * a * dt[i1] * dt[i1]
-#         new_t = t + dt
-#         potential, s_forces = self.energy_forces(new_t, new_x[is_atom])
-#         forces = xp.zeros_like(x)
-#         forces[is_atom] = s_forces
-#         new_v, new_a = nose_hoover_scf(a, v, forces, m,
-#                                        self.therm_number, self.therm_target,
-#                                        self.kbt, dt[i1], self.tol)
-#         self.positions = new_x
-#         self.velocities = new_v
-#         self.accelerations = new_a
-#         self.time = self.time + dt
-#         kinetic = kinetic_energy(
-#             len(self.n_free), m[is_atom], new_v[is_atom], i1[is_atom])
-#         conserve = nose_hoover_conserve(self.positions, self.velocities,
-#                                         self.masses,
-#                                         self.therm_number,
-#                                         self.therm_target,
-#                                         self.kbt, potential, i1)
-#         report({'time': self.time,
-#                 'positions': self.positions[is_atom],
-#                 'velocities': self.velocities[is_atom],
-#                 'accelerations': self.accelerations[is_atom],
-#                 'potential': potential,
-#                 'forces': forces[is_atom],
-#                 'kinetic': kinetic,
-#                 'energy': kinetic + potential,
-#                 'conserved': conserve,
-#                 'temperature': temperature(kinetic, self.n_free),
-#                 },
-#                self)
-#
-#
