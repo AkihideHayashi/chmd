@@ -3,6 +3,7 @@ import abc
 from abc import ABC, abstractproperty, abstractmethod
 from typing import List, Dict, Callable
 import numpy as np
+from chainer.dataset.convert import to_device
 from chainer import report, Reporter
 from chainer.backend import get_array_module
 from chmd.math.xp import (repeat_interleave,
@@ -197,6 +198,7 @@ class VelocityVerlet(Dynamics):
         self.evaluator(self.batch)
         self.batch.accelerations = (self.batch.forces /
                                     self.batch.masses[:, :, xp.newaxis])
+        self.delta_time = to_device(self.delta_time, self.batch.device)
 
     def update(self):
         """Velocity verloet algorithm."""
@@ -245,7 +247,7 @@ class VelocityScaling(Dynamics):
 
         """
         super().__init__(evaluator, name=name)
-        self.batch: Batch = batch
+        self.batch: MolecularDynamicsBatch = batch
         self.delta_time = dt
         self.kbt = kbt
 
@@ -256,6 +258,8 @@ class VelocityScaling(Dynamics):
         self.evaluator(self.batch)
         self.batch.accelerations = (self.batch.forces /
                                     self.batch.masses[:, :, xp.newaxis])
+        self.delta_time = to_device(self.delta_time, self.batch.device)
+        self.kbt = to_device(self.kbt, self.batch.device)
 
     def update(self):
         """Velocity Scaling Velocity Verlet algorithm."""
