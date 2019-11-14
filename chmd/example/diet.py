@@ -46,7 +46,8 @@ def main():
 
     dataset_path = '../../../data/processed.pkl'
     load = 'result/best_model'
-    search_fail_cases(dataset_path, params, 'train', 0.1, load, 5, -1)
+    fail = search_fail_cases(dataset_path, params, 'train', 0.1, load, 5, -1)
+    print(fail)
 
 
 def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_id):
