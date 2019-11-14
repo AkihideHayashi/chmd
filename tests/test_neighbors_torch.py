@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torchani
 from chmd.utils.batchform import parallel_form
-from chmd.functions.neighbors import neighbor_duos_to_parallel_form, neighbor_trios
+from chmd.functions.neighbors import neighbor_duos_to_flatten_form, neighbor_trios, neighbor_duos, compute_shifts, number_repeats
 from chmd.math.xp import cumsum_from_zero, repeat_interleave
 
 
@@ -56,21 +56,23 @@ def neighbor_torch(mols, cutoff, order_of_symbols):
     ijk3 = sort2(np.array([i3, j3, k3]))
     return ijs2, ijk3
 
-def format_neighbor_duos(cells, positions, cutoff, shifts, valid):
-    dof = np.sum(valid, axis=1)
-    head = cumsum_from_zero(dof)
-    head = np.arange(positions.shape[0]) * positions.shape[1]
-    n2, i2, j2, s2 = neighbor_duos(cells, positions, cutoff, shifts, valid)
-    return i2 + head[n2], j2 + head[n2], s2
+# def format_neighbor_duos(cells, positions, cutoff, shifts, valid):
+#     dof = np.sum(valid, axis=1)
+#     head = cumsum_from_zero(dof)
+#     head = np.arange(positions.shape[0]) * positions.shape[1]
+#     n2, i2, j2, s2 = neighbor_duos(cells, positions, cutoff, shifts, valid)
+#     return i2 + head[n2], j2 + head[n2], s2
 
 def neighbor_chmd(mols, cutoff, order_of_symbols):
     """Calculate duo and trio using chmd."""
     pbc = np.array(mols[0].pbc)
-    positions_lst = [atoms.positions for atoms in mols]
-    (positions,), valid = parallel_form.from_list([positions_lst], 0.0)
+    positions_lst = [np.linalg.solve(atoms.cell.T, atoms.positions.T).T for atoms in mols]
+    # positions_lst = [atoms.positions for atoms in mols]
+    (positions,), valid = parallel_form.from_list([positions_lst], [0.0])
     cells = np.concatenate([atoms.cell[np.newaxis, :, :] for atoms in mols], axis=0)
-    i2, j2, s2 = neighbor_duos_to_parallel_form(cells, positions, cutoff, pbc, valid)
- 
+    i2, j2, s2 = neighbor_duos_to_flatten_form(cells, positions, cutoff, pbc, valid)
+    repeat = np.max(number_repeats(cells, pbc, cutoff), axis=0) * 2
+    shifts = compute_shifts(repeat)
     ijs2 = np.concatenate([np.array([i2, j2]), s2.T], axis=0)
     i3, j3 = neighbor_trios(i2, j2)
     assert np.all(i2[j3] == i2[i3])
