@@ -4,9 +4,10 @@ import json
 import argparse
 import numpy as np
 import chainer
-from chainer.datasets import open_pickle_dataset
+from chainer.optimizers import Adam
+from chainer.datasets import open_pickle_dataset, open_pickle_dataset_writer
 from chainer.training import updaters, triggers, extensions
-from chmd.models.ani import ANI1, ANI1EachEnergyGradLoss
+from chmd.models.ani import ANI1, ANI1EachEnergyGradLoss, ANI1EnergyGradLoss
 from chmd.functions.activations import gaussian
 from chmd.datasets import split_dataset_by_key
 from chmd.dataset.convert import converter_concat_neighbors
@@ -14,6 +15,7 @@ from chmd.training.triggers.purpose_trigger import PurposeTrigger
 
 
 def main():
+    """Train and extend loop."""
     params = {
         "num_elements": 3,
         "aev_params": {
@@ -44,13 +46,40 @@ def main():
         "order": ["H", "C", "Pt"]
     }
 
-    dataset_path = '../../../data/processed.pkl'
+    dataset_dir = '../../../data/'
+    dataset_prefix = 'processed'
+    out = 'result'
     load = 'result/best_model'
-    fail = search_fail_cases(dataset_path, params, 'train', 0.1, load, 5, -1)
-    print(fail)
+    purpose = 0.004
+    batch_size = 500
+    max_epoch = 100000
+    device_id = -1
+    for i in range(10):
+        inp_dataset_path = os.path.join(
+            dataset_dir, f'{dataset_prefix}_{i}.pkl')
+        out_dataset_path = os.path.join(
+            dataset_dir, f'{dataset_prefix}_{i+1}.pkl')
+        learn(inp_dataset_path, params, out, purpose, batch_size,
+              max_epoch, device_id, Adam())
+        fail = search_fail_cases(inp_dataset_path, params, 'train',
+                                 purpose * 2, load, batch_size, device_id)
+        print(f'Cycle {i}: {len(fail)} fail cases.', flush=True)
+        fail = np.random.choice(fail, len(fail) * 0.01, replace=False)
+        copy_and_renew(inp_dataset_path, out_dataset_path, fail, 'train')
 
 
-def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_id):
+def copy_and_renew(inp, out, trigger, key):
+    """Copy. However renew status."""
+    with open_pickle_dataset(inp) as fi:
+        with open_pickle_dataset_writer(out) as fo:
+            for i, data in enumerate(fi):
+                if i in trigger:
+                    data['status'] = key
+                fo.write(data)
+
+
+def search_fail_cases(dataset_path, params, key, tol,
+                      load, batch_size, device_id):
     """Calculate Loss for all data belong to key."""
     model = ANI1(**params)
     chainer.serializers.load_npz(load, model)
@@ -61,7 +90,7 @@ def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_i
         all_dataset = list(all_dataset)
         print('Selecting train keys.', flush=True)
         predict_keys = np.array([i for i, data in enumerate(all_dataset)
-                        if data['status'] == key and i != 0])
+                                 if data['status'] == key and i != 0])
         print("Number of train keys:", len(predict_keys), flush=True)
         dataset, _ = split_dataset_by_key(all_dataset, predict_keys)
         iterator = chainer.iterators.SerialIterator(

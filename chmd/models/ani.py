@@ -182,8 +182,8 @@ class ANI1EnergyGradLoss(Chain):
         self.ce = ce
         self.cf = cf
 
-    def __call__(self, cells, elements, positions, valid,
-                 i2, j2, s2, energies, forces):
+    def forward(self, cells, elements, positions, valid,
+                i2, j2, s2, energies, forces):
         """Please be aware that positions is direct coordinate.
         However, forces is eV / Angstrome.
         It is vasprun.xml 's setting. And it is convenient for calculate loss.
