@@ -198,7 +198,7 @@ class VelocityVerlet(Dynamics):
         self.evaluator(self.batch)
         self.batch.accelerations = (self.batch.forces /
                                     self.batch.masses[:, :, xp.newaxis])
-        self.delta_time = to_device(self.delta_time, self.batch.device)
+        self.delta_time = to_device(self.batch.device, self.delta_time)
 
     def update(self):
         """Velocity verloet algorithm."""
@@ -258,8 +258,8 @@ class VelocityScaling(Dynamics):
         self.evaluator(self.batch)
         self.batch.accelerations = (self.batch.forces /
                                     self.batch.masses[:, :, xp.newaxis])
-        self.delta_time = to_device(self.delta_time, self.batch.device)
-        self.kbt = to_device(self.kbt, self.batch.device)
+        self.delta_time = to_device(self.batch.device, self.delta_time)
+        self.kbt = to_device(self.batch.device, self.kbt)
 
     def update(self):
         """Velocity Scaling Velocity Verlet algorithm."""
