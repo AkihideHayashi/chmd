@@ -126,12 +126,12 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
     assert shifts.shape == (n_shifts, n_dim)
     # (n_batch, n_shifts, [n_dim], n_dim)
     # x @ A == xp.sum(x[:, N] * A[:, :], axis=0)
-    realshift = xp.sum(shifts[N, :, :, N] * cells[:, N, :, :], axis=-2)
-    assert realshift.shape == (n_batch, n_shifts, n_dim)
     full_shape = (n_batch, n_atoms, n_atoms, n_shifts, n_dim)
-    vector = (positions[:, :, N, N, :] -
-              positions[:, N, :, N, :] -
-              realshift[:, N, N, :, :])
+    direct_vector = (positions[:, :, N, N, :] -
+                     positions[:, N, :, N, :] -
+                     shifts[N, N, N, :, :])
+    vector = xp.sum(
+        direct_vector[:, :, :, :, :, N] * cells[:, N, N, N, :, :], axis=-2)
     pow_distance = xp.sum(vector * vector, axis=-1)
     assert pow_distance.shape == (n_batch, n_atoms, n_atoms, n_shifts)
     base_shape = (n_batch, n_atoms, n_atoms, n_shifts)
