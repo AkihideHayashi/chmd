@@ -199,8 +199,10 @@ class ANI1EnergyGradLoss(Chain):
         loss_f = 0.0
         for i in range(self.predictor.n_agents):
             fi_direct, = grad([-en[i, :]], [ri], enable_double_backprop=True)
+            fi_cartesian = direct_to_cartesian_chainer(cells, fi_direct)
+            forces_cartesian = direct_to_cartesian_chainer(cells, forces)
             loss_e += F.mean_squared_error(en[i, :], energies)
-            loss_f += F.mean_squared_error(fi_direct, forces)
+            loss_f += F.mean_squared_error(fi_cartesian, forces_cartesian)
         loss_e /= self.predictor.n_agents
         loss_f /= self.predictor.n_agents
         report({'loss_e': loss_e.data}, self)
@@ -281,7 +283,7 @@ class ANI1EachEnergyGradLoss(Chain):
         en = self.predictor(cells=cells, positions=ri, *args, **kwargs)
         assert en.ndim == 2
         mean = F.mean(en, axis=0)
-        force = grad([-mean], [ri])
+        force, = grad([-mean], [ri])
         loss_e = (mean - energies) ** 2
         loss_f = F.mean(F.mean((force - forces) ** 2, axis=-1), axis=-1)
         return self.ce * loss_e.data + self.cf * loss_f.data

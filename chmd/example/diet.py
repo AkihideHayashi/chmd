@@ -44,6 +44,10 @@ def main():
         "order": ["H", "C", "Pt"]
     }
 
+    dataset_path = '../../../data/processed.pkl'
+    load = 'result/best_model'
+    search_fail_cases(dataset_path, params, 'train', 0.1, load, 5, -1)
+
 
 def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_id):
     """Calculate Loss for all data belong to key."""
@@ -55,15 +59,16 @@ def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_i
     with open_pickle_dataset(dataset_path) as all_dataset:
         all_dataset = list(all_dataset)
         print('Selecting train keys.', flush=True)
-        predict_keys = [i for i, data in enumerate(all_dataset)
-                        if data['status'] == key and i != 0]
+        predict_keys = np.array([i for i, data in enumerate(all_dataset)
+                        if data['status'] == key and i != 0])
         print("Number of train keys:", len(predict_keys), flush=True)
         dataset, _ = split_dataset_by_key(all_dataset, predict_keys)
         iterator = chainer.iterators.SerialIterator(
             dataset, batch_size, repeat=False, shuffle=False)
         for it in iterator:
             data = converter_concat_neighbors(it, device=device_id)
-            all_loss.extend(loss_fun(data))
+            l = loss_fun(**data)
+            all_loss.extend(l)
     all_loss = np.array(all_loss)
     return predict_keys[all_loss > tol]
 
@@ -115,3 +120,6 @@ def learn(dataset_path, params, out, purpose, batch_size,
                                     'main/loss', 'main/loss_e', 'main/loss_f',
                                     'elapsed_time']))
         trainer.run()
+
+if __name__ == "__main__":
+    main()
