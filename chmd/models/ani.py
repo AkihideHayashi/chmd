@@ -199,10 +199,8 @@ class ANI1EnergyGradLoss(Chain):
         loss_f = 0.0
         for i in range(self.predictor.n_agents):
             fi_direct, = grad([-en[i, :]], [ri], enable_double_backprop=True)
-            fi_cartesian = direct_to_cartesian_chainer(cells, fi_direct)
-            assert ri.shape == fi_cartesian.shape
             loss_e += F.mean_squared_error(en[i, :], energies)
-            loss_f += F.mean_squared_error(fi_cartesian, forces)
+            loss_f += F.mean_squared_error(fi_direct, forces)
         loss_e /= self.predictor.n_agents
         loss_f /= self.predictor.n_agents
         report({'loss_e': loss_e.data}, self)
@@ -247,3 +245,43 @@ class EnergyForceVar(Chain):
         var = n2 - mean * mean
         force, = grad([-mean], [ri])
         return mean.data, force.data, var.data
+
+
+class ANI1EachEnergyGradLoss(Chain):
+    """Energy + Grad."""
+
+    def __init__(self, predictor, ce, cf):
+        """Initializer.
+
+        Paramters
+        ---------
+        ce: coeffient for energy.
+        cf: coeffient for forces.
+
+        """
+        super().__init__()
+        with self.init_scope():
+            self.predictor = predictor
+        self.ce = ce
+        self.cf = cf
+
+    def __call__(self, cells, positions, energies, forces, *args, **kwargs):
+        """Loss.
+
+        Parameters
+        ----------
+        target: Chain.
+        ri: positions.
+        e: Energy (ground truth.)
+        f: Force (ground truth.)
+
+        """
+        ri = Variable(positions)
+        # n_agents x n_batch
+        en = self.predictor(cells=cells, positions=ri, *args, **kwargs)
+        assert en.ndim == 2
+        mean = F.mean(en, axis=0)
+        force = grad([-mean], [ri])
+        loss_e = (mean - energies) ** 2
+        loss_f = F.mean(F.mean((force - forces) ** 2, axis=-1), axis=-1)
+        return self.ce * loss_e.data + self.cf * loss_f.data

@@ -28,6 +28,10 @@ def main():
                 data['i2'] = i2
                 data['j2'] = j2
                 data['s2'] = s2
+                if np.random.random() < 0.001:
+                    data['status'] = 'train'
+                else:
+                    data['status'] = 'remain'
                 fo.write(data)
 
 if __name__ == "__main__":

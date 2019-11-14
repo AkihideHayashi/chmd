@@ -6,11 +6,10 @@ import numpy as np
 import chainer
 from chainer.datasets import open_pickle_dataset
 from chainer.training import updaters, triggers, extensions
-from chmd.models.ani import ANI1
+from chmd.models.ani import ANI1, ANI1EachEnergyGradLoss
 from chmd.functions.activations import gaussian
-from chmd.links.loss import EnergyGradLoss, EachEnergyGradLoss
 from chmd.datasets import split_dataset_by_key
-from chmd.dataset.convert import concat_converter
+from chmd.dataset.convert import converter_concat_neighbors
 from chmd.training.triggers.purpose_trigger import PurposeTrigger
 
 
@@ -38,61 +37,64 @@ def main():
         "nn_params": {
             "n_layers": [[128, 128, 1], [128, 128, 1], [128, 128, 1]],
             "act": gaussian
-        }
+        },
+        "cutoff": 9.0,
+        "pbc": [True, True, True],
+        "n_agents": 4,
+        "order": ["H", "C", "Pt"]
     }
 
 
-def search_fail_cases(manager_path, dataset_path, key, params, tol,
-                      load, batch_size, device_id):
+def search_fail_cases(dataset_path, params, key, tol, load, batch_size, device_id):
     """Calculate Loss for all data belong to key."""
-    with open(manager_path) as f:
-        manager = json.load(f)
-    predict_keys = manager[key]
     model = ANI1(**params)
     chainer.serializers.load_npz(load, model)
-    loss_fun = EachEnergyGradLoss(model, 1.0, 1.0)
+    loss_fun = ANI1EachEnergyGradLoss(model, 1.0, 1.0)
     loss_fun.to_device(device_id)
     all_loss = []
     with open_pickle_dataset(dataset_path) as all_dataset:
-        dataset = split_dataset_by_key(all_dataset, predict_keys)[0]
+        all_dataset = list(all_dataset)
+        print('Selecting train keys.', flush=True)
+        predict_keys = [i for i, data in enumerate(all_dataset)
+                        if data['status'] == key and i != 0]
+        print("Number of train keys:", len(predict_keys), flush=True)
+        dataset, _ = split_dataset_by_key(all_dataset, predict_keys)
         iterator = chainer.iterators.SerialIterator(
             dataset, batch_size, repeat=False, shuffle=False)
         for it in iterator:
-            data = concat_converter(it, device=device_id, padding=None)
+            data = converter_concat_neighbors(it, device=device_id)
             all_loss.extend(loss_fun(data))
     all_loss = np.array(all_loss)
     return predict_keys[all_loss > tol]
 
 
-def learn(manager_path, dataset_path, params, out, load,
-          purpose, batch_size, max_epoch, device_id):
+def learn(dataset_path, params, out, purpose, batch_size,
+          max_epoch, device_id, optimizer):
     """Learn paramter from data."""
-    with open(manager_path) as f:
-        manager = json.load(f)
-    train_keys = manager['train']
     model = ANI1(**params)
     with open_pickle_dataset(dataset_path) as all_dataset:
-        train_dataset = split_dataset_by_key(all_dataset, train_keys)[0]
-        if load and os.path.isfile(load):
-            chainer.serializers.load_npz(load, model)
-        else:
-            model.shift.setup(
-                elements=[d['elements'] for d in train_dataset],
-                energies=[d['energy'] for d in train_dataset]
-            )
-        loss = EnergyGradLoss(model, 1.0, 1.0)
-        optimizer = chainer.optimizers.Adam()
-        optimizer.setup(model)
-        train_iter = chainer.iterators.SerialIterator(
+        all_dataset = list(all_dataset)
+        print('Selecting train keys.', flush=True)
+        train_keys = [i for i, data in enumerate(all_dataset)
+                      if data['status'] == 'train' and i != 0]
+        print("Number of train keys:", len(train_keys), flush=True)
+        train_dataset, _ = split_dataset_by_key(all_dataset, train_keys)
+        model.shift.setup(
+            elements=[d['elements'] for d in train_dataset],
+            energies=[d['energy'] for d in train_dataset]
+        )
+        loss = ANI1EnergyGradLoss(model, ce=1.0, cf=1.0)
+        optimizer.setup(loss)
+        train_iter = chainer.iterators.MultiprocessIterator(
             train_dataset, batch_size)
-        updater = updaters.StandardUpdater(iterator=train_iter,
-                                           optimizer=optimizer,
-                                           converter=concat_converter,
-                                           device=device_id,
-                                           loss_func=loss)
+        updater = updaters.StandardUpdater(
+            iterator=train_iter,
+            optimizer=optimizer,
+            converter=converter_concat_neighbors,
+            device=device_id)
         trigger_early_stopping = PurposeTrigger(
             purpose,
-            monitor='main/loss',
+            monitor='main/loss_f',
             check_trigger=(1, 'epoch'),
             max_trigger=(max_epoch, 'epoch')
         )
@@ -105,8 +107,9 @@ def learn(manager_path, dataset_path, params, out, load,
         trainer.extend(
             extensions.snapshot_object(model, filename='best_model'),
             trigger=trigger_min)
-        trainer.extend(
-            extensions.LogReport(trigger=(1, 'epoch'), log_name='log'))
+        log_report_extension = extensions.LogReport(
+            trigger=(1, 'epoch'), log_name='log')
+        trainer.extend(log_report_extension)
         trainer.extend(
             extensions.PrintReport(['epoch', 'iteration',
                                     'main/loss', 'main/loss_e', 'main/loss_f',

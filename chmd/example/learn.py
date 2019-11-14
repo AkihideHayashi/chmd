@@ -96,7 +96,6 @@ def learn(dataset_path, params, out, purpose, batch_size, max_epoch, device_id, 
             extensions.PrintReport(['epoch', 'iteration',
                                     'main/loss', 'main/loss_e', 'main/loss_f',
                                     'elapsed_time']))
-        trainer.extend(extensions.ProgressBar())
         trainer.run()
 
 
