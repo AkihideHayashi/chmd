@@ -1,6 +1,7 @@
 """Parser of vasprun.xml."""
 import xml.etree.ElementTree as ET
 import numpy as np
+import os
 
 
 def find_attrib(tree, key, val):
@@ -54,12 +55,12 @@ def read_calculation(nelm: int, x):
     energy = np.array(float(find_attrib(
         x.find('energy'), 'name', "e_wo_entrp").text.strip()))
     return {'cell': cell,
-            'positions': positions @ cell,
+            'positions': positions,
             'energy': energy,
             'forces': forces}, nelm > n
 
 
-def read_trajectory(path: str):
+def read_trajectory(path: str, generation: str):
     """Read vasprun.xml.
 
     Parameters
@@ -71,6 +72,14 @@ def read_trajectory(path: str):
     List[Dict]
     [{symbols, vasprun, generation, cell, positions, energy, forces}]
 
+    symbols: str[n_atoms]
+    vasprun: str
+    generation: str
+    cell: eV / Angstrome float[3, 3]
+    positions: direct coordinate float[n_atoms, 3]
+    energy: eV float
+    forces: eV / Angstrome float[n_atoms, 3]
+
     """
     tree = ET.parse(path)
     root = tree.getroot()
@@ -81,5 +90,7 @@ def read_trajectory(path: str):
         values, converged = read_calculation(nelm, child)
         if converged:
             values['symbols'] = symbols
+            values['vasprun'] = os.path.basename(path)
+            values['generation'] = generation
             trajectory.append(values)
     return trajectory
