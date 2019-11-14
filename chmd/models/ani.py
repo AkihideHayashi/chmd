@@ -180,28 +180,38 @@ class ANI1EnergyGradLoss(Chain):
         self.ce = ce
         self.cf = cf
 
-    def __call__(self, cells, positions, energies, forces, *args, **kwargs):
-        """Loss.
+    def __call__(self, cells, elements, positions, valid,
+                 i2, j2, s2, energies, forces):
+        """Please be aware that positions is direct coordinate.
+        However, forces is eV / Angstrome.
+        It is vasprun.xml 's setting. And it is convenient for calculate loss.
 
         Parameters
         ----------
-        target: Chain.
-        ri: positions.
-        e: Energy (ground truth.)
-        f: Force (ground truth.)
+        cells: float[n_batch, n_dim, n_dim] Angsgrome
+        elements: int[n_batch, n_atoms]
+        positions: float[n_batch, n_atoms, n_dim] direct coordinate.
+        valid: bool[n_batch, n_atoms]
+        i2: int[n_pairs]
+        j2: int[n_pairs]
+        s2: int[n_pairs, n_dim]
+        energies: float[n_batch] eV
+        forces: float[n_batch, n_atoms, n_dim] eV / Angstrome
 
         """
-        ri = Variable(positions)
+        ri_direct = Variable(positions)
+        ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
         # n_agents x n_batch
-        en = self.predictor(cells=cells, positions=ri, *args, **kwargs)
-        assert en.ndim == 2
+        en_predict = self.predictor(cells, elements, positions,
+                                    valid, i2, j2, s2)
+        assert en_predict.ndim == 2
         loss_e = 0.0
         loss_f = 0.0
-        # cells_inv = F.batch_inv(cells)
         for i in range(self.predictor.n_agents):
-            fi_direct, = grad([-en[i, :]], [ri], enable_double_backprop=True)
-            loss_e += F.mean_squared_error(en[i, :], energies)
-            loss_f += F.mean_squared_error(fi_direct, forces)
+            fi, = grad([-en_predict[i, :]], [ri_cartesian],
+                       enable_double_backprop=True)
+            loss_e += F.mean_squared_error(en_predict[i, :], energies)
+            loss_f += F.mean_squared_error(fi, forces)
         loss_e /= self.predictor.n_agents
         loss_f /= self.predictor.n_agents
         report({'loss_e': loss_e.data}, self)
