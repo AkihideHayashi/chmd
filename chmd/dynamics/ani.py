@@ -31,7 +31,7 @@ class BasicNeighborList(object):
 
 
 class ANI1MolecularDynamicsBatch(BasicBatch, MolecularDynamicsBatch, ANI1Batch):
-    def __init__(self, symbols, cells, positions, velocities, t0, params, path):
+    def __init__(self, symbols, cells, positions, velocities, t0, params, path, masses=None):
         cutoff = params['cutoff']
         order = np.array(params['order'])
         self.model = ANI1ForceField(params, path, BasicNeighborList(cutoff))
@@ -41,10 +41,14 @@ class ANI1MolecularDynamicsBatch(BasicBatch, MolecularDynamicsBatch, ANI1Batch):
         elements = np.array([symbols_to_elements(s, order) for s in sym])
         super().__init__(elements, cl, pos, val, np.array([True, True, True]))
         dtype = chainer.config.dtype
+        if masses is None:
+            masses = get_mass(sym)
+        else:
+            masses = masses[elements]
         with self.init_scope():
             self._velocities = vel.astype(dtype)
             self._accelerations = self.xp.zeros_like(vel).astype(dtype)
-            self._masses = get_mass(sym).astype(dtype)
+            self._masses = masses.astype(dtype)
             self._forces = self.accelerations / self.masses[:, :, self.xp.newaxis]
             self._times = t0.astype(dtype)
             self._variance_potential_energies = self.xp.zeros_like(
