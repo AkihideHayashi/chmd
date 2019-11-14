@@ -6,7 +6,7 @@ from chainer.datasets import open_pickle_dataset
 from chainer.training import updaters, triggers, extensions
 from chmd.models.ani import ANI1, ANI1EnergyGradLoss
 from chmd.functions.activations import gaussian
-from chmd.dataset.convert import concat_converter
+from chmd.dataset.convert import converter_concat_neighbors
 from chmd.datasets import split_dataset_by_key
 from chmd.training.triggers.purpose_trigger import PurposeTrigger
 
@@ -41,50 +41,42 @@ def main():
         "n_agents": 4,
         "order": ["H", "C", "Pt"]
     }
-    manager_path = 'files/manager.json'
-    dataset_path = 'files/direct.pkl'
+    # dataset_path = 'files/direct.pkl'
+    dataset_path = '../../../data/processed.pkl'
     out = 'result'
-    load = None
-    purpose = 0.02
+    purpose = 0.003
     batch_size = 5
-    max_epoch = 10
+    max_epoch = 1000
     device_id = -1
     optimizer = chainer.optimizers.Adam()
-    learn(manager_path, dataset_path, params, out, load,
-          purpose, batch_size, max_epoch, device_id, optimizer)
+    learn(dataset_path, params, out, purpose, batch_size, max_epoch, device_id, optimizer)
 
 
-def learn(manager_path, dataset_path, params, out, load,
-          purpose, batch_size, max_epoch, device_id, optimizer):
+def learn(dataset_path, params, out, purpose, batch_size, max_epoch, device_id, optimizer):
     """Learn paramter from data."""
-    with open(manager_path) as f:
-        manager = json.load(f)
-    train_keys = manager['train']
-    #
-    train_keys = train_keys[:20]
-    #
     model = ANI1(**params)
     with open_pickle_dataset(dataset_path) as all_dataset:
-        train_dataset = split_dataset_by_key(all_dataset, train_keys)[0]
-        # train_dataset = split_dataset_by_key(list(all_dataset), train_keys)[0]
-        if load and os.path.isfile(load):
-            chainer.serializers.load_npz(load, model)
-        else:
-            model.shift.setup(
-                elements=[d['elements'] for d in train_dataset],
-                energies=[d['energy'] for d in train_dataset]
-            )
+        all_dataset = list(all_dataset)
+        print('Selecting valid keys.', flush=True)
+        train_keys = [i for i, data in enumerate(all_dataset) if data['status'] == 'train' and i != 0]
+        print("Number of train keys:", len(train_keys), flush=True)
+        train_dataset, _ = split_dataset_by_key(all_dataset, train_keys)
+        model.shift.setup(
+            elements=[d['elements'] for d in train_dataset],
+            energies=[d['energy'] for d in train_dataset]
+        )
         loss = ANI1EnergyGradLoss(model, ce=1.0, cf=1.0)
         optimizer.setup(loss)
         train_iter = chainer.iterators.MultiprocessIterator(
             train_dataset, batch_size)
-        updater = updaters.StandardUpdater(iterator=train_iter,
-                                           optimizer=optimizer,
-                                           converter=concat_converter,
-                                           device=device_id)
+        updater = updaters.StandardUpdater(
+            iterator=train_iter,
+            optimizer=optimizer,
+            converter=converter_concat_neighbors,
+            device=device_id)
         trigger_early_stopping = PurposeTrigger(
             purpose,
-            monitor='main/loss',
+            monitor='main/loss_f',
             check_trigger=(1, 'epoch'),
             max_trigger=(max_epoch, 'epoch')
         )
@@ -97,14 +89,16 @@ def learn(manager_path, dataset_path, params, out, load,
         trainer.extend(
             extensions.snapshot_object(model, filename='best_model'),
             trigger=trigger_min)
-        log_report_extension = extensions.LogReport(trigger=(1, 'epoch'), log_name='log')
+        log_report_extension = extensions.LogReport(
+            trigger=(1, 'epoch'), log_name='log')
         trainer.extend(log_report_extension)
         trainer.extend(
             extensions.PrintReport(['epoch', 'iteration',
                                     'main/loss', 'main/loss_e', 'main/loss_f',
                                     'elapsed_time']))
+        trainer.extend(extensions.ProgressBar())
         trainer.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
