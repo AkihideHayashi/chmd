@@ -111,7 +111,8 @@ class ANI1(Chain):
         self.n_agents = n_agents
         self.order = order
 
-    def forward(self, cells, elements, positions, valid, i2, j2, s2):
+    def forward(self, cells, elements, positions, valid, i2, j2, s2,
+                cartesian_positions=None):
         """Apply. All inputs are assumed to be passed as parallel form.
 
         However, i2, j2, s2 are assumed to be flatten from.
@@ -131,9 +132,10 @@ class ANI1(Chain):
 
         """
         xp = self.xp
-        in_cell_positions = positions - positions // 1
-        cartesian_positions = direct_to_cartesian_chainer(
-            cells, in_cell_positions)
+        if cartesian_positions is None:
+            in_cell_positions = positions - positions // 1
+            cartesian_positions = direct_to_cartesian_chainer(
+                cells, in_cell_positions)
         n_batch, n_atoms = elements.shape
         # Fist, make all to flatten form.
         v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
@@ -199,11 +201,12 @@ class ANI1EnergyGradLoss(Chain):
         forces: float[n_batch, n_atoms, n_dim] eV / Angstrome
 
         """
-        ri_direct = Variable(positions)
+        ri_direct = Variable(positions - positions // 1)
         ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
         # n_agents x n_batch
         en_predict = self.predictor(cells, elements, positions,
-                                    valid, i2, j2, s2)
+                                    valid, i2, j2, s2,
+                                    cartesian_positions=ri_cartesian)
         assert en_predict.ndim == 2
         loss_e = 0.0
         loss_f = 0.0
