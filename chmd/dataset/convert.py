@@ -96,6 +96,39 @@ def converter_concat_neighbors(batch, device):
     return return_dict
 
 
+def converter_concat_neighbors_(batch, device):
+    """Not tested yet."""
+    lst_keys = ['positions', 'elements', 'forces']
+    paddings = [0.0, -1, 0.0]
+    lst = [[atoms[key] for atoms in batch] for key in lst_keys]
+    parallels, valid = parallel_form.from_list(lst, paddings)
+    positions = parallels[0]
+    elements = parallels[1]
+    forces = parallels[2]
+    cells = np.array([atoms['cell'] for atoms in batch])
+    energies = np.array([atoms['energy'] for atoms in batch])
+    n_batch, n_atoms = parallels[1].shape[:2]
+    i2, j2, s2 = concat_neighbors(n_batch, n_atoms,
+                                  [atoms['i2'] for atoms in batch],
+                                  [atoms['j2'] for atoms in batch],
+                                  [atoms['s2'] for atoms in batch],
+                                  )
+
+    dtype = chainer.config.dtype
+    return_dict = {
+        'positions': positions.astype(dtype),
+        'forces': forces.astype(dtype),
+        'elements': elements,
+        'valid': valid,
+        'cells': cells.astype(dtype),
+        'energies': energies.astype(dtype),
+        'i2': i2,
+        'j2': j2,
+        's2': s2.astype(dtype),
+    }
+    for key in return_dict:
+        return_dict[key] = to_device(device, return_dict[key])
+    return return_dict
 # def concat_converter(batch, device=None, padding=None):
 #     """Not tested yet."""
 #     lst_keys = ['positions', 'elements', 'forces']
