@@ -279,7 +279,8 @@ class ANI1EachEnergyGradLoss(Chain):
         self.ce = ce
         self.cf = cf
 
-    def __call__(self, cells, positions, energies, forces, *args, **kwargs):
+    def forward(self, cells, elements, positions, valid,
+                i2, j2, s2, energies, forces):
         """Loss.
 
         Parameters
@@ -290,12 +291,15 @@ class ANI1EachEnergyGradLoss(Chain):
         f: Force (ground truth.)
 
         """
-        ri = Variable(positions)
+        cartesian_positions = positions - positions // 1
+        ri_cartesian = Variable(cartesian_positions)
         # n_agents x n_batch
-        en = self.predictor(cells=cells, positions=ri, *args, **kwargs)
-        assert en.ndim == 2
-        mean = F.mean(en, axis=0)
-        force, = grad([-mean], [ri])
+        en_predict = self.predictor(cells, elements, positions,
+                                    valid, i2, j2, s2,
+                                    cartesian_positions=ri_cartesian)
+        assert en_predict.ndim == 2
+        mean = F.mean(en_predict, axis=0)
+        force, = grad([-mean], [ri_cartesian])
         loss_e = (mean - energies) ** 2
         loss_f = F.mean(F.mean((force - forces) ** 2, axis=-1), axis=-1)
         return self.ce * loss_e.data + self.cf * loss_f.data
