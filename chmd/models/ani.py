@@ -291,8 +291,8 @@ class ANI1EachEnergyGradLoss(Chain):
         f: Force (ground truth.)
 
         """
-        cartesian_positions = positions - positions // 1
-        ri_cartesian = Variable(cartesian_positions)
+        ri_direct = Variable(positions - positions // 1)
+        ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
         # n_agents x n_batch
         en_predict = self.predictor(cells, elements, positions,
                                     valid, i2, j2, s2,
