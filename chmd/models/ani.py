@@ -125,7 +125,7 @@ class ANI1ForceField(object):
         mean_molecular_energies = F.mean(molecular_energies, 0)  # (batch)
         var_molecular_energies = (
             F.mean(molecular_energies ** 2, 0)
-            - mean_molecular_energies)
+            - mean_molecular_energies ** 2)
         std_molecular_energies = F.sqrt(var_molecular_energies) * to_ub
         assert mean_molecular_energies.shape == (n_batch, )
         assert var_molecular_energies.shape == (n_batch, )
