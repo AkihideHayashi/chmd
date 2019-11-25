@@ -79,6 +79,7 @@ class ANI1ForceField(object):
         self.name = name
     
     def __call__(self, batch: ANI1Batch):
+        xp = batch.xp
         i2, j2, s2 = self.neighbor_list(batch)
         positions = Variable(batch.positions)
         elements = batch.elements
@@ -88,9 +89,11 @@ class ANI1ForceField(object):
         mean = F.sum(energies, axis=0)
         mean2 = F.sum(energies * energies, axis=0)
         var = mean2 - mean
-        forces, = grad([-mean], [positions])
+        forces, = grad([-mean], [positions])  # (batch x atoms x dim)
         batch.potential_energies = mean.data
-        batch.forces = forces.data
+        L = xp.linalg.inv(batch.cells)
+        G = L.T @ L  # (batch x dim x dim)
+        batch.forces = xp.sum(G[:, None, :, :] * forces.data[:, :, None, :], axis=-1)
         batch.variance_potential_energies = var.data
 
 

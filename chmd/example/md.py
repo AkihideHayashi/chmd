@@ -55,11 +55,11 @@ class XYZDumper(Extension):
         symbols = observation['quantities/symbols']
         variances = observation['quantities/variance_potential_energies']
         valid = observation['quantities/valid']
-        for i, (sym, pos, var, val) in enumerate(zip(symbols, positions, variances, valid)):
+        for i, (sym, ce, pos, var, val) in enumerate(zip(symbols, cells, positions, variances, valid)):
             with open(f'{self.prefix}_{i}.xyz', 'a') as f:
                 natoms = np.sum(val)
                 f.write(f'{natoms}\n')
-                f.write(f'{var}\n')
+                f.write(f'{var}, {ce[0, 0]} {ce[0, 1]} {ce[0, 2]} {ce[1, 0]} {ce[1, 1]} {ce[1, 2]} {ce[2, 0]} {ce[2, 1]} {ce[2, 2]}\n')
                 for j, (s, p) in enumerate(zip(sym, pos)):
                     if valid[i, j]:
                         f.write(f'{s} {p[0]} {p[1]} {p[2]}\n')
