@@ -1,7 +1,9 @@
 """ANI-1."""
+import math
 from abc import ABC, abstractproperty, abstractmethod
 import numpy as np
 import chainer
+from chainer.backend import get_array_module
 from chainer import Chain, Variable, ChainList, grad, report
 import chainer.functions as F
 from chmd.links.ani import ANI1AEV, ANI1AEV2EnergyFlattenForm
@@ -59,16 +61,40 @@ class ANI1Batch(AbstractBatch):
         ...
 
     @abstractproperty
-    def variance_potential_energies(self):
+    def error(self):
         ...
 
-    @variance_potential_energies.setter
-    def variance_potential_energies(self, _):
+    @error.setter
+    def error(self, _):
+        ...
+
+    @abstractproperty
+    def atomic_error(self):
+        ...
+
+    @atomic_error.setter
+    def atomic_error(self, _):
         ...
 
     @abstractmethod
     def xp(self):
         ...
+
+
+def grad_to_force(grads, cells):
+    """Calculate forces from gradients in direct positoins.
+
+    Parameters
+    ----------
+    grads: (batch, atoms, dim)
+    cells: (batch, dim, dim)
+
+    """
+    xp = get_array_module(grad)
+    L = xp.linalg.inv(cells)  # (batch x dim x dim)
+    LT = L.transpose((0, 2, 1))  # (batch x dim x dim)
+    G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
+    return xp.sum(G[:, None, :, :] * grads[:, :, None, :], axis=-1)
 
 
 class ANI1ForceField(object):
@@ -77,25 +103,42 @@ class ANI1ForceField(object):
         chainer.serializers.load_npz(path, self.model)
         self.neighbor_list = neighbor_list
         self.name = name
-    
+
     def __call__(self, batch: ANI1Batch):
         xp = batch.xp
+        n_batch, n_atoms, n_dim = batch.positions.shape
+        n_emsemble = self.model.n_agents
+        to_ub = math.sqrt(n_emsemble / (n_emsemble - 1))
         i2, j2, s2 = self.neighbor_list(batch)
         positions = Variable(batch.positions)
         elements = batch.elements
         cells = Variable(batch.cells)
-        valid = batch.valid
-        energies = self.model(cells, elements, positions, valid, i2, j2, s2)
-        mean = F.sum(energies, axis=0)
-        mean2 = F.sum(energies * energies, axis=0)
-        var = mean2 - mean
-        forces, = grad([-mean], [positions])  # (batch x atoms x dim)
-        batch.potential_energies = mean.data
-        L = xp.linalg.inv(batch.cells)  # (batch x dim x dim)
-        LT = L.transpose((0, 2, 1))  # (batch x dim x dim)
-        G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
-        batch.forces = xp.sum(G[:, None, :, :] * forces.data[:, :, None, :], axis=-1)
-        batch.variance_potential_energies = var.data
+        valid = batch.valid  # (batch, atoms)
+        assert valid.shape == (n_batch, n_atoms)
+        number_of_atoms = xp.sum(valid, 1)
+        assert number_of_atoms.shape == (n_batch, )
+        atomic_energies = self.model(
+            cells, elements, positions, valid, i2, j2, s2)
+        assert atomic_energies.shape == (n_emsemble, n_batch, n_atoms)
+        molecular_energies = F.sum(atomic_energies, 2)  # (ensemble, batch)
+        assert molecular_energies.shape == (n_emsemble, n_batch)
+        mean_molecular_energies = F.mean(molecular_energies, 0)  # (batch)
+        var_molecular_energies = (
+            F.mean(molecular_energies ** 2, 0)
+            - mean_molecular_energies)
+        std_molecular_energies = F.sqrt(var_molecular_energies) * to_ub
+        assert mean_molecular_energies.shape == (n_batch, )
+        assert var_molecular_energies.shape == (n_batch, )
+
+        atomic_std = atomic_energies.data.std(0) * to_ub
+
+        batch.potential_energies = mean_molecular_energies.data
+        batch.error = std_molecular_energies.data / xp.sqrt(number_of_atoms)
+        batch.atomic_error = atomic_std
+
+        grads, = grad([-mean_molecular_energies], [positions])
+        batch.forces = grad_to_force(grads.data, cells.data)
+
 
 
 class ANI1(Chain):
@@ -106,8 +149,9 @@ class ANI1(Chain):
         """Initializer."""
         super().__init__()
         with self.init_scope():
-            self.aev = ANI1AEV(num_elements, **aev_params)  # recieve flatten form and return flatten form.
-            self.energies = ChainList(*[AtomWiseParamNN(**nn_params)  
+            # recieve flatten form and return flatten form.
+            self.aev = ANI1AEV(num_elements, **aev_params)
+            self.energies = ChainList(*[AtomWiseParamNN(**nn_params)
                                         for _ in range(n_agents)])  # reciece flatten form.
             self.shift = EnergyShifter(num_elements)
         self.add_persistent('pbc', pbc)
@@ -152,20 +196,30 @@ class ANI1(Chain):
         # List[(n_batch * n_atoms)]
 
         def calculate_atomic_valid(en):
-            atomic_novalid = F.squeeze(en(aev, ei), axis=1) + shift
+            energies = en(aev, ei)  # (n_batch * n_atoms, n_quantities)
+            atomic_novalid = F.squeeze(energies, axis=1) + shift
+            # (n_batch * n_atoms)
+
             atomic_valid = F.where(v1,
                                    atomic_novalid,
                                    xp.zeros_like(atomic_novalid.data))
-            return F.expand_dims(atomic_valid, 0)
+            return F.reshape(atomic_valid, (1, n_batch, n_atoms))
 
-        # (n_parallel x n_batch * n_atoms)
+        # (n_parallel, n_batch, n_atoms)
         atomic_energies = F.concat([calculate_atomic_valid(e)
                                     for e in self.energies], axis=0)
-        molecular_energies = F.sum(
-            F.reshape(atomic_energies, (self.n_agents, n_batch, n_atoms)),
-            axis=2
-            )
-        return molecular_energies
+        return atomic_energies
+
+
+def atomic_energies_to_molecular_energies(atomic_energies):
+    """Sum up atomic energies.
+
+    Parameters
+    ----------
+    atomic_energies: (n_agents, n_batch, n_atoms)
+
+    """
+    return F.sum(atomic_energies, axis=2)
 
 
 class ANI1EnergyGradLoss(Chain):
@@ -208,9 +262,11 @@ class ANI1EnergyGradLoss(Chain):
         ri_direct = Variable(positions - positions // 1)
         ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
         # n_agents x n_batch
-        en_predict = self.predictor(cells, elements, positions,
-                                    valid, i2, j2, s2,
-                                    cartesian_positions=ri_cartesian)
+        en_predict = atomic_energies_to_molecular_energies(
+            self.predictor(cells, elements, positions,
+                           valid, i2, j2, s2,
+                           cartesian_positions=ri_cartesian)
+        )
         assert en_predict.ndim == 2
         loss_e = 0.0
         loss_f = 0.0
@@ -298,9 +354,10 @@ class ANI1EachEnergyGradLoss(Chain):
         ri_direct = Variable(positions - positions // 1)
         ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
         # n_agents x n_batch
-        en_predict = self.predictor(cells, elements, positions,
-                                    valid, i2, j2, s2,
-                                    cartesian_positions=ri_cartesian)
+        en_predict = atomic_energies_to_molecular_energies(
+            self.predictor(cells, elements, positions,
+                           valid, i2, j2, s2,
+                           cartesian_positions=ri_cartesian))
         assert en_predict.ndim == 2
         mean = F.mean(en_predict, axis=0)
         force, = grad([-mean], [ri_cartesian])

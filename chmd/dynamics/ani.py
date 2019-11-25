@@ -51,8 +51,8 @@ class ANI1MolecularDynamicsBatch(BasicBatch, MolecularDynamicsBatch, ANI1Batch):
             self._masses = masses.astype(dtype)
             self._forces = self.accelerations / self.masses[:, :, self.xp.newaxis]
             self._times = t0.astype(dtype)
-            self._variance_potential_energies = self.xp.zeros_like(
-                self.potential_energies)
+            self._error = self.xp.zeros_like(self.potential_energies)
+            self._atomic_error = self.xp.zeros_like(self._masses)
 
     @property
     def velocities(self):
@@ -87,12 +87,20 @@ class ANI1MolecularDynamicsBatch(BasicBatch, MolecularDynamicsBatch, ANI1Batch):
         self._times[...] = times
 
     @property
-    def variance_potential_energies(self):
-        return self._variance_potential_energies
+    def error(self):
+        return self._error
 
-    @variance_potential_energies.setter
-    def variance_potential_energies(self, vpe):
-        self._variance_potential_energies[...] = vpe
+    @error.setter
+    def error(self, error):
+        self._error[...] = error
+
+    @property
+    def atomic_error(self):
+        return self._atomic_error
+
+    @atomic_error.setter
+    def atomic_error(self, atomic_error):
+        self._atomic_error[...] = atomic_error
 
     @property
     def masses(self):

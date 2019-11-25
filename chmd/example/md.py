@@ -1,7 +1,9 @@
+import json
 import numpy as np
 from ase.units import kB
 import chainer
 from chainer import report, get_current_reporter
+from chainer.dataset.convert import to_device
 from chmd.dynamics.dynamics import VelocityScaling, MolecularDynamicsBatch
 from chmd.models.ani import ANI1ForceField
 from chmd.dynamics.ani import BasicNeighborList, ANI1MolecularDynamicsBatch
@@ -21,7 +23,7 @@ class MDReporter(Extension):
     def __call__(self, batch: MolecularDynamicsBatch):
         to_report = {
             'potential_energies': batch.potential_energies,
-            'symbols': self.order[batch.elements],
+            'symbols': self.order[to_device(-1, batch.elements)],
             'positions': batch.positions,
             'cells': batch.cells,
             'valid': batch.valid,
@@ -35,7 +37,8 @@ class ANI1Reporter(MDReporter):
     def __call__(self, batch: MolecularDynamicsBatch):
         super().__call__(batch)
         to_report = {
-            'variance_potential_energies': batch.variance_potential_energies
+            'error': batch.error,
+            'atomic_error': batch.atomic_error
         }
         report(to_report, self)
 
@@ -53,13 +56,13 @@ class XYZDumper(Extension):
         cartesian_positions = observation['quantities/positions']
         positions = direct_to_cartesian(cells, cartesian_positions)
         symbols = observation['quantities/symbols']
-        variances = observation['quantities/variance_potential_energies']
+        error = observation['quantities/error']
         valid = observation['quantities/valid']
-        for i, (sym, ce, pos, var, val) in enumerate(zip(symbols, cells, positions, variances, valid)):
+        for i, (sym, pos, err, val) in enumerate(zip(symbols, positions, error, valid)):
             with open(f'{self.prefix}_{i}.xyz', 'a') as f:
                 natoms = np.sum(val)
                 f.write(f'{natoms}\n')
-                f.write(f'{var}, {ce[0, 0]} {ce[0, 1]} {ce[0, 2]} {ce[1, 0]} {ce[1, 1]} {ce[1, 2]} {ce[2, 0]} {ce[2, 1]} {ce[2, 2]}\n')
+                f.write(f'{err}\n')
                 for j, (s, p) in enumerate(zip(sym, pos)):
                     if valid[i, j]:
                         f.write(f'{s} {p[0]} {p[1]} {p[2]}\n')
@@ -77,9 +80,39 @@ class PrintReport(Extension):
 
     def __call__(self, batch):
         reporter = get_current_reporter()
-        out = str(self.step) + ' '.join(str(reporter.observation[key]) for key in self.keys)
+        out = str(self.step) + \
+            ' '.join(str(reporter.observation[key]) for key in self.keys)
         print(out, flush=True)
         self.step += 1
+
+
+class JsonDumper(Extension):
+    def __init__(self, path):
+        self.path = path
+
+    def __call__(self, batch):
+        reporter = get_current_reporter()
+        observation = reporter.observation
+        torecord = {}
+        for key in observation:
+            torecord[key] = to_device(-1, observation[key]).tolist()
+        append_json(torecord, self.path)
+
+    def setup(self, dynamics):
+        pass
+
+
+def append_json(data: dict, path: str):
+    with open(path, 'ab+') as f:
+        f.seek(0, 2)
+        if f.tell() == 0:
+            f.write(json.dumps([data]).encode())
+        else:
+            f.seek(-1, 2)
+            f.truncate()
+            f.write(' , '.encode())
+            f.write(json.dumps(data).encode())
+            f.write(']'.encode())
 
 
 def main():
@@ -117,24 +150,26 @@ def main():
     min_distance = 2.7
     n_atoms = 10
     max_cycle = 20
-    n_batch = 2
+    n_batch = 3
     device_id = -1
     ratio = np.array([1.0, 1.0, 1.0])
-    batch = random_batch(cell, min_distance, n_atoms, max_cycle, ratio, n_batch, params, 'result/best_model')
+    batch = random_batch(cell, min_distance, n_atoms, max_cycle, ratio, n_batch,
+                         params, 'result/best_model', masses=np.array([10.0, 10.0, 10.0]))
     efv = ANI1ForceField(params, 'result/best_model', BasicNeighborList(9.0))
     batch.to_device(device_id)
     efv.model.to_device(device_id)
-    kbt = np.ones(n_batch).astype(dtype) * 6000 * kB
-    dt = np.ones(n_batch).astype(dtype) * 1.0
+    kbt = np.ones(n_batch).astype(dtype) * 600 * kB
+    dt = np.ones(n_batch).astype(dtype) * 0.2
     md = VelocityScaling(batch, efv, dt, kbt)
     md.extend(ANI1Reporter(params['order']))
-    md.extend(XYZDumper('md'))
+    md.extend(XYZDumper('traj/md'))
     md.extend(PrintReport(['quantities/times']))
-    md.run(1000)
+    md.extend(JsonDumper('out.json'))
+    md.run(10000)
 
 
 def random_batch(cell, min_distance, n_atoms,
-                 max_cycle, ratio, n_batch, params, path):
+                 max_cycle, ratio, n_batch, params, path, masses=None):
     order = np.array(params['order'])
     positions = [random_coordinates(cell, min_distance, n_atoms, max_cycle)
                  for _ in range(n_batch)]
@@ -142,6 +177,7 @@ def random_batch(cell, min_distance, n_atoms,
     cells = np.array([cell for _ in range(n_batch)])
     velocities = [np.random.random(p.shape) * 2 - 1 for p in positions]
     t0 = np.zeros(n_batch, dtype=np.int32)
-    return ANI1MolecularDynamicsBatch(symbols, cells, positions, velocities, t0, params, path)
-    
+    return ANI1MolecularDynamicsBatch(symbols, cells, positions, velocities, t0, params, path, masses)
+
+
 main()
