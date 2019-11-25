@@ -90,7 +90,7 @@ def grad_to_force(grads, cells):
     cells: (batch, dim, dim)
 
     """
-    xp = get_array_module(grad)
+    xp = get_array_module(grads)
     L = xp.linalg.inv(cells)  # (batch x dim x dim)
     LT = L.transpose((0, 2, 1))  # (batch x dim x dim)
     G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
