@@ -11,6 +11,7 @@ from chmd.dynamics.dynamics import Extension
 from chmd.functions.activations import gaussian
 from chmd.math.lattice import direct_to_cartesian
 from chmd.loop.randomgeneration import random_coordinates, random_symbols
+from chainer.datasets import PickleDatasetWriter
 
 
 class MDReporter(Extension):
@@ -84,6 +85,23 @@ class PrintReport(Extension):
             ' '.join(str(reporter.observation[key]) for key in self.keys)
         print(out, flush=True)
         self.step += 1
+
+class PickleDumper(Extension):
+    def __init__(self, path):
+        self.path = path
+        self.writer = open(path, 'wb')
+        self.pickle = PickleDatasetWriter(self.writer)
+    
+    def setup(self, dynamics):
+        pass
+
+    def __call__(self, batch):
+        reporter = get_current_reporter()
+        observation = reporter.observation
+        torecord = {}
+        for key in observation:
+            torecord[key] = to_device(-1, observation[key]).tolist()
+        self.pickle.write(torecord)
 
 
 class JsonDumper(Extension):
@@ -165,6 +183,7 @@ def main():
     md.extend(XYZDumper('traj/md'))
     md.extend(PrintReport(['quantities/times']))
     md.extend(JsonDumper('out.json'))
+    md.extend(PickleDumper('out.pkl'))
     md.run(10000)
 
 
