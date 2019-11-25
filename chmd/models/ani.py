@@ -94,7 +94,7 @@ def grad_to_force(grads, cells):
     L = xp.linalg.inv(cells)  # (batch x dim x dim)
     LT = L.transpose((0, 2, 1))  # (batch x dim x dim)
     G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
-    return xp.sum(G[:, None, :, :] * grads[:, :, None, :], axis=-1)
+    return - xp.sum(G[:, None, :, :] * grads[:, :, None, :], axis=-1)
 
 
 class ANI1ForceField(object):
@@ -136,7 +136,7 @@ class ANI1ForceField(object):
         batch.error = std_molecular_energies.data / xp.sqrt(number_of_atoms)
         batch.atomic_error = atomic_std
 
-        grads, = grad([-mean_molecular_energies], [positions])
+        grads, = grad([mean_molecular_energies], [positions])
         batch.forces = grad_to_force(grads.data, cells.data)
 
 

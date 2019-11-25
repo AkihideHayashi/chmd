@@ -30,6 +30,7 @@ class MDReporter(Extension):
             'valid': batch.valid,
             'velocities': batch.velocities,
             'times': batch.times,
+            'masses': batch.masses
         }
         report(to_report, self)
 
