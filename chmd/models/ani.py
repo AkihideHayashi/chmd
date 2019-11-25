@@ -91,8 +91,9 @@ class ANI1ForceField(object):
         var = mean2 - mean
         forces, = grad([-mean], [positions])  # (batch x atoms x dim)
         batch.potential_energies = mean.data
-        L = xp.linalg.inv(batch.cells)
-        G = L.T @ L  # (batch x dim x dim)
+        L = xp.linalg.inv(batch.cells)  # (batch x dim x dim)
+        LT = L.T  # (batch x dim x dim)
+        G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
         batch.forces = xp.sum(G[:, None, :, :] * forces.data[:, :, None, :], axis=-1)
         batch.variance_potential_energies = var.data
 
