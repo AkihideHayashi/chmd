@@ -51,7 +51,7 @@ def read_i(i: ElementTree.Element):
     """Read i tag."""
     if i.text is None:
         raise RuntimeError()
-    array = np.array(i.text.split())
+    array = np.array(i.text.strip())
     if 'type' in i.attrib:
         if i.attrib['type'] == 'logical':
             @np.vectorize
