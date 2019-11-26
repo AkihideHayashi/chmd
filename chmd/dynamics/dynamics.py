@@ -1,63 +1,26 @@
 """Dynamics."""
-import abc
 from abc import ABC, abstractproperty, abstractmethod
-from typing import List, Dict, Callable
+from typing import Dict, Callable
 import numpy as np
 from chainer.dataset.convert import to_device
 from chainer import report, Reporter
-from chainer.backend import get_array_module
-from chmd.math.xp import (repeat_interleave,
-                          scatter_add_to_zero,
-                          cumsum_from_zero)
 from chmd.dynamics.nosehoover import (setup_nose_hoover,
                                       nose_hoover_scf,
                                       nose_hoover_conserve
                                       )
-from chmd.dynamics.batch import AbstractBatch
-from chmd.math.lattice import direct_to_cartesian
+from chmd.dynamics.analyze import (calculate_kinetic_energies,
+                                   calculate_temperature)
 
 
-def calculate_kinetic_energies(cells, velocities, masses, valid):
-    """All parameters are assumed to be parallel format.
-
-    Parameters
-    ----------
-    cells: float(n_batch, n_dim, n_dim)
-    velocities: float(n_batch, n_atoms, n_dim) direct
-    masses: float(n_batch, n_atoms)
-    valid: bool(n_batch, n_atoms)
-    """
-    n_batch, n_atoms, n_dim = velocities.shape
-    xp = get_array_module(cells)
-    v = direct_to_cartesian(cells, velocities)
-    m = masses
-    atomic = xp.where(valid[:, :, xp.newaxis],
-                      0.5 * m[:, :, xp.newaxis] * v * v,
-                      xp.zeros_like(v))
-    return xp.sum(atomic.reshape((n_batch, n_atoms * n_dim)), axis=1)
-
-
-def calculate_temperature(kinetic, dof):
-    """Calculate temperature.
-
-    Parameters
-    ----------
-    kinetic: kinetic energy.
-    n_free: degree of freedom for each system.
-
-    """
-    return (kinetic * 2 / dof).astype(kinetic.dtype)
-
-
-class Extension(abc.ABC):
+class Extension(ABC):
     """Abstract base class for Extension."""
 
-    @abc.abstractmethod
+    @abstractmethod
     def __call__(self, observation: Dict):
         """Recieve observation and do something."""
         raise NotImplementedError()
 
-    @abc.abstractmethod
+    @abstractmethod
     def setup(self, dynamics):
         """Set up persistent parameters.
 
@@ -70,7 +33,11 @@ class Extension(abc.ABC):
 
 
 class DynamicsBatch(ABC):
-    """Abstract Dynamics is Optimizer and Molecualar Dynamics and Monte Carlo"""
+    """Abstract Dynamics.
+
+    Optimizer and Molecualar Dynamics and MonteCarlo.
+    """
+
     @abstractproperty
     def positions(self):
         """(n_batch, n_atoms, n_dim)."""
@@ -92,7 +59,7 @@ class DynamicsBatch(ABC):
         """(n_batch)."""
 
 
-class Dynamics(abc.ABC):
+class Dynamics(ABC):
     """Base class for dynamics."""
 
     def __init__(self, evaluator, name='md'):
@@ -107,7 +74,7 @@ class Dynamics(abc.ABC):
         self.reporter.add_observer(evaluator.name, evaluator)
         self.batch = None
 
-    @abc.abstractmethod
+    @abstractmethod
     def update(self):
         """Update coordinate and other properties."""
         raise NotImplementedError()
@@ -169,7 +136,7 @@ class MolecularDynamicsBatch(DynamicsBatch):
 
     @abstractproperty
     def masses(self):
-        """(n_batch, n_atoms)"""
+        """(n_batch, n_atoms)."""
 
 
 class VelocityVerlet(Dynamics):
@@ -178,7 +145,7 @@ class VelocityVerlet(Dynamics):
     Attributes
     ----------
     batch: batch object.
-    energy_forces_eval: 
+    energy_forces_eval: Callable.
     delta_time: (n_batch,)
 
     """
@@ -291,7 +258,8 @@ class VelocityScaling(Dynamics):
 
 
 class NoseHooverChain(Dynamics):
-    def __init__(self, batch: MolecularDynamicsBatch, energy_forces_eval: Callable, dt,
+    def __init__(self, batch: MolecularDynamicsBatch,
+                 energy_forces_eval: Callable, dt,
                  thermostat_kbt, thermostat_timeconst,
                  thermostat_numbers, thermostat_targets,
                  tol=1e-8,
@@ -300,7 +268,7 @@ class NoseHooverChain(Dynamics):
         import warnings
         warnings.warn('Now, nose hoover is assumed to handle seriese form.')
         super().__init__(energy_forces_eval, name='md')
-        self.batch: Batch = batch
+        self.batch: MolecularDynamicsBatch = batch
         self.accelerations = None
         self.delta_time = dt
         self.tol = tol

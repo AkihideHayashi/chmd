@@ -101,7 +101,7 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
     Parameters
     ----------
     cells: float[n_batch, n_dim, n_dim]
-    positions: float[n_batch, n_atoms, n_dim]
+    positions: float[n_batch, n_atoms, n_dim] direct coordinate.
     cutoff: float
     shifts: float[n_shifts, n_dim]
     valid: bool[n_batch, n_atoms]
@@ -113,7 +113,7 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
     The k-th bond is the bond in the n[k]-th batch,
     among which the i[k]-th bond and the j[k]-th bond.
     for all 0 <= k < len(n),
-    | positions[n[k], i[k]] - (positions[n[k], j[k]] + s[k] @ cells[n[k]]) |
+    | (positions[n[k], i[k]] - (positions[n[k], j[k]] + s[k])) @ cells[n[k]] |
     < cutoff
 
     """

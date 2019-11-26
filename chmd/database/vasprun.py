@@ -60,7 +60,7 @@ def read_calculation(nelm: int, x):
             'forces': forces}, nelm > n
 
 
-def read_trajectory(path: str, generation: str):
+def read_trajectory(path=None, generation=None, string=None):
     """Read vasprun.xml.
 
     Parameters
@@ -81,7 +81,13 @@ def read_trajectory(path: str, generation: str):
     forces: eV / Angstrome float[n_atoms, 3]
 
     """
-    tree = ET.parse(path)
+    assert generation is not None
+    if path:
+        tree = ET.parse(path)
+    elif string:
+        tree = ET.fromstring(string)
+    else:
+        raise TypeError('read_trajectory must recieve path or string.')
     root = tree.getroot()
     nelm = int(find_attrib(root.find('incar'), 'name', 'NELM').text)
     symbols = read_symbols(root)
