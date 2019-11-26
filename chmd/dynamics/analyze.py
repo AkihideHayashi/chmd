@@ -1,4 +1,5 @@
-from chainer.backends import get_array_module
+"""Analyze."""
+from chainer.backend import get_array_module
 from chmd.math.lattice import direct_to_cartesian
 
 
