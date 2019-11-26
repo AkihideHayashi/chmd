@@ -63,6 +63,8 @@ def read_i(i: ElementTree.Element):
                 else:
                     raise KeyError()
             return read_logical(array)
+        elif i.attrib['type'] == 'int':
+            return array.astype(np.int64)
         else:
             raise NotImplementedError()
     else:
