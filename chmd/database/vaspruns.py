@@ -47,6 +47,29 @@ def read_v(v: ElementTree.Element):
     return array
 
 
+def read_i(i: ElementTree.Element):
+    """Read i tag."""
+    if i.text is None:
+        raise RuntimeError()
+    array = np.array(i.text.split())
+    if 'type' in i.attrib:
+        if i.attrib['type'] == 'logical':
+            @np.vectorize
+            def read_logical(x):
+                if x == 'T':
+                    return True
+                elif x == 'F':
+                    return False
+                else:
+                    raise KeyError()
+            return read_logical(array)
+        else:
+            raise NotImplementedError()
+    else:
+        return array.astype(np.float64)
+    return array
+
+
 def read_varray(varray):
     """Read varray tag."""
     return np.array([read_v(c) for c in varray])
