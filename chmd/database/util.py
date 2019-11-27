@@ -27,4 +27,4 @@ def define_kpoints(cell):
     inv = np.linalg.inv(cell)
     b = np.linalg.norm(inv, axis=1)
     pt_12 = 0.03682081
-    return tuple(np.round(b / pt_12).astype(np.int64).tolist())
+    return tuple(np.ceil(b / pt_12).astype(np.int64).tolist())
