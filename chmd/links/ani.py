@@ -2,12 +2,10 @@
 import numpy as np
 import chainer
 import chainer.functions as F
-from chainer import Variable, Chain
 from chainer.backend import get_array_module
 from chmd.functions.neighbors import (duo_index, distance,
                                       distance_angle, neighbor_trios)
 from chmd.functions.cutoffs import CosineCutoff
-from chmd.links.linear import AtomWiseParamNN
 
 
 class ANI1AEV(object):
@@ -33,32 +31,32 @@ class ANI1AEV(object):
         self.radial = ANI1Radial(num_elements, **radial)
         self.angular = ANI1Angular(num_elements, **angular)
 
-    def __call__(self, cells, ri, ei, i1, i2, j2, s2):
+    def __call__(self, ri, ei, i2, j2, s2):
         """Calculate full AEV. Inputs are serial form or flatten form.
 
         Parameters
         ----------
-        cells: (n_batch, 3, 3)
-        ri: (n_atoms,)
+        ri: (n_atoms, dim) cartesian
         ei: (n_atoms,)
-        i1: (n_atoms,)
         i2: (n_duos,)
         j2: (n_duos,)
-        s2: (n_duos, 3)
+        s2: (n_duos, dim) cartesian
 
         """
-        xp = get_array_module(ri)
-        rij_full = distance(cells, ri, i1, i2, j2, s2)
+        rij_full = distance(ri, i2, j2, s2)
         in_rc_rad = rij_full.data < self.radial.rc
         in_rc_ang = rij_full.data < self.angular.rc
-        g_rad = self.radial(rij_full[in_rc_rad], ei,
-                            i2[in_rc_rad], j2[in_rc_rad])
+
+        rij_r = rij_full[in_rc_rad]
+        i2_r = i2[in_rc_rad]
+        j2_r = j2[in_rc_rad]
+        g_rad = self.radial(rij_r, ei, i2_r, j2_r)
+
         i2_a = i2[in_rc_ang]
         j2_a = j2[in_rc_ang]
         s2_a = s2[in_rc_ang]
         i3_a, j3_a = neighbor_trios(i2_a, j2_a)
-        rij3, rik3, cosijk = distance_angle(
-            cells, ri, i1, i2_a, j2_a, s2_a, i3_a, j3_a)
+        rij3, rik3, cosijk = distance_angle(ri, i2_a, j2_a, s2_a, i3_a, j3_a)
         g_ang = self.angular(rij3, rik3, cosijk, ei, i2_a, j2_a, i3_a, j3_a)
         return F.concat([g_rad, g_ang], axis=1)
 
@@ -212,52 +210,3 @@ class ANI1Angular(object):
 
         scattered = F.scatter_add(seed, center * numnum + ej3, flat_peaks)
         return scattered.reshape(n_solo, numnum * n1) / 2
-
-
-class ANI1AEV2EnergySerieseForm(Chain):
-    """ANI-1 energy calculator."""
-
-    def __init__(self, nn_params):
-        """Initializer."""
-        super().__init__()
-        with self.init_scope():
-            self.nn = AtomWiseParamNN(**nn_params)
-
-    def forward(self, aev, ei, i1, n_batch):
-        """Forward."""
-        dtype = chainer.config.dtype
-        atomic = self.nn(aev, ei)
-        seed = self.xp.zeros((n_batch, atomic.shape[1]), dtype=dtype)
-        energy = F.scatter_add(seed, i1, atomic)[:, 0]
-        return energy
-
-
-class ANI1AEV2EnergyFlattenForm(Chain):
-    """ANI-1 energy calculator."""
-
-    def __init__(self, nn_params):
-        """Initializer."""
-        super().__init__()
-        with self.init_scope():
-            self.nn = AtomWiseParamNN(**nn_params)
-
-    def forward(self, aev, ei, valid):
-        """Forward. Inputs are assumed to be flatten form.
-
-        Parameters
-        ----------
-        aev: (n_batch * n_atoms, n_feature)
-        ei: (n_batch * n_atoms)
-        valid: (n_batch * n_atoms)
-
-        Returns
-        -------
-
-        Atomic energy (flatten form.)
-        """
-        xp = self.xp
-        atomic_all = self.nn(aev, ei)
-        n_features = atomic_all.shape[1]
-        assert n_features == 1
-        atomic = F.where(valid, atomic_all, xp.zeros_like(atomic_all.data))
-        return atomic

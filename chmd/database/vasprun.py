@@ -1,100 +1,185 @@
-"""Parser of vasprun.xml."""
-import xml.etree.ElementTree as ET
+"""Future version of vasprun.py."""
+from typing import Dict
+from xml.etree import ElementTree
 import numpy as np
-import os
 
 
-def find_attrib(tree, key, val):
-    """Find section which have the attribute."""
-    for child in tree:
-        if key in child.attrib and child.attrib[key] == val:
-            return child
+@np.vectorize
+def to_type(x, typename):
+    """Transform type."""
+    if typename == 'logical':
+        if x == 'T':
+            return True
+        elif x == 'F':
+            return False
+        else:
+            raise KeyError()
+    elif typename == 'int':
+        return int(x.strip())
+    elif typename == 'string':
+        return x
+    elif typename == 'float':
+        return float(x.strip())
+    else:
+        raise NotImplementedError()
+
+
+def read_v(v: ElementTree.Element):
+    """Read v tag."""
+    if v.text is None:
+        raise RuntimeError()
+    array = np.array(v.text.split())
+    if 'type' in v.attrib:
+        if v.attrib['type'] == 'logical':
+            @np.vectorize
+            def read_logical(x):
+                if x == 'T':
+                    return True
+                elif x == 'F':
+                    return False
+                else:
+                    raise KeyError()
+            return read_logical(array)
+        else:
+            raise NotImplementedError()
+    else:
+        return array.astype(np.float64)
+    return array
+
+
+def read_i(i: ElementTree.Element):
+    """Read i tag."""
+    if i.text is None:
+        raise RuntimeError()
+    array = np.array(i.text.strip())
+    if 'type' in i.attrib:
+        if i.attrib['type'] == 'logical':
+            @np.vectorize
+            def read_logical(x):
+                if x == 'T':
+                    return True
+                elif x == 'F':
+                    return False
+                else:
+                    raise KeyError()
+            return read_logical(array)
+        elif i.attrib['type'] == 'int':
+            return array.astype(np.int64)
+        else:
+            raise NotImplementedError()
+    else:
+        return array.astype(np.float64)
+    return array
 
 
 def read_varray(varray):
-    """Read varray section."""
-    v = []
-    for child in varray.findall('v'):
-        v.append(child.text.split())
-    return np.array(v).astype(np.float64)
+    """Read varray tag."""
+    return np.array([read_v(c) for c in varray])
 
 
-def read_symbols(root):
-    """Read symbols from root."""
-    symbols = []
-    s = find_attrib(root.find('atominfo'), 'name', 'atoms').find('set')
-    for child in s:
-        for i, c in enumerate(child):
-            if i == 0:
-                symbols.append(c.text.strip())
-    return np.array(symbols)
-    # return np.array(symbols, dtype=h5py.special_dtype(vlen=str))
+def read_rc(rc):
+    """Read rc c tag as array of str."""
+    return tuple([c.text.strip() for c in rc])
 
 
-def read_calculation(nelm: int, x):
-    """Read calculation.
+def read_r(r):
+    """Read r tag as array of str."""
+    return r.text.split()
+
+
+def read_set(set_):
+    """Read set tag as array of str."""
+    ret = []
+    for child in set_:
+        if child.tag == 'rc':
+            ret.append(read_rc(child))
+        elif child.tag == 'r':
+            ret.append(read_r(child))
+        elif child.tag == 'set':
+            ret.append(read_set(child))
+        else:
+            raise NotImplementedError(child.tag)
+    return np.array(ret)
+
+
+def read_dimensions(dimensions):
+    """Read dimension tags in array tag."""
+    dims = [int(d.attrib['dim']) for d in dimensions]
+    assert dims == list(range(1, len(dims) + 1))
+    dimension_tags = [d.text for d in dimensions]
+    return dimension_tags
+
+
+def read_fields(fields):
+    """Read fields tags in array tag."""
+    types = [f.attrib['type'] if 'type' in f.attrib else 'float'
+             for f in fields]
+    field_names = [f.text for f in fields]
+    return {n: t for t, n in zip(types, field_names)}
+
+
+def read_array(array: ElementTree.Element):
+    """Read an array tag.
 
     Parameters
     ----------
-    nelm: nelm tag (max iter).
-    x: calculation section.
+    array: array tag.
 
     Returns
     -------
-    dict(cell, positions, energy, forces), converged
+    dimensions: names of each dimension.
+    array: structured array which contains elements.
 
     """
-    n = len(x.findall('scstep'))
-    structure = x.find('structure')
-    cell = read_varray(
-        find_attrib(
-            structure.find('crystal'), 'name', 'basis'))
-    positions = read_varray(
-        find_attrib(structure, 'name', 'positions'))
-    forces = read_varray(find_attrib(x, 'name', 'forces'))
-    energy = np.array(float(find_attrib(
-        x.find('energy'), 'name', "e_wo_entrp").text.strip()))
+    dimensions = read_dimensions(array.findall('dimension'))
+    fields = read_fields(array.findall('field'))
+    set_ = read_set(array.find('set'))
+    tmp = {name: to_type(np.take(set_, i, axis=-1), fields[name])
+           for i, name in enumerate(fields)}
+    return list(reversed(dimensions)), dict_to_structured_array(tmp)
+
+
+def dict_to_structured_array(dic: Dict[str, np.ndarray]):
+    """Transform dict of array to structured array."""
+    dtype = [(t, v.dtype) for t, v in dic.items()]
+    shape = next(iter(dic.values())).shape
+    tmp = np.zeros(shape, dtype)
+    for key, val in dic.items():
+        tmp[key] = val
+    return tmp
+
+
+def read_nelm(vasprun):
+    """Get NELM tag."""
+    return read_i(vasprun.find('incar/i[@name="NELM"]'))
+
+
+def read_symbols(vasprun):
+    """Get symbol list."""
+    dim_name, array = read_array(vasprun.find('atominfo/array[@name="atoms"]'))
+    assert dim_name == ['ion']
+    return array['element']
+
+
+def read_selective(vasprun):
+    """Get Selective Dynamics information."""
+    varray = read_varray(vasprun.find(
+        'structure[@name="initialpos"]/varray[@name="selective"]'))
+    return varray
+
+
+def read_calculation(calc, nelm):
+    """Read result of scf step only if converged."""
+    n_scstep = len(calc.findall('scstep'))
+    if n_scstep >= nelm:
+        return None
+    forces = read_varray(calc.find('varray[@name="forces"]'))
+    stress = read_varray(calc.find('varray[@name="stress"]'))
+    energy = read_i(calc.find('energy/i[@name="e_wo_entrp"]'))
+    cell = read_varray(calc.find('structure/crystal/varray[@name="basis"]'))
+    positions = read_varray(calc.find('structure/varray[@name="positions"]'))
     return {'cell': cell,
             'positions': positions,
             'energy': energy,
-            'forces': forces}, nelm > n
-
-
-def read_trajectory(path=None, generation=None, string=None):
-    """Read vasprun.xml.
-
-    Parameters
-    ----------
-    path: The path for vasprun.xml.
-
-    Returns
-    -------
-    List[Dict]
-    [{symbols, vasprun, generation, cell, positions, energy, forces}]
-
-    symbols: str[n_atoms]
-    vasprun: str
-    generation: str
-    cell: eV / Angstrome float[3, 3]
-    positions: direct coordinate float[n_atoms, 3]
-    energy: eV float
-    forces: eV / Angstrome float[n_atoms, 3]
-
-    """
-    assert generation is not None
-    if string:
-        root = ET.fromstring(string)
-    else:
-        tree = ET.parse(path)
-        root = tree.getroot()
-    nelm = int(find_attrib(root.find('incar'), 'name', 'NELM').text)
-    symbols = read_symbols(root)
-    trajectory = []
-    for child in root.findall('calculation'):
-        values, converged = read_calculation(nelm, child)
-        if converged:
-            values['symbols'] = symbols
-            values['vasprun'] = os.path.basename(path)
-            values['generation'] = generation
-            trajectory.append(values)
-    return trajectory
+            'forces': forces,
+            'stress': stress}

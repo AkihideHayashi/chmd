@@ -63,6 +63,14 @@ def neighbor_torch(mols, cutoff, order_of_symbols):
 #     n2, i2, j2, s2 = neighbor_duos(cells, positions, cutoff, shifts, valid)
 #     return i2 + head[n2], j2 + head[n2], s2
 
+def transform_shifts_to_direct(cells, i2, s2, positions):
+    inv = np.linalg.inv(cells)
+    n_atoms = positions.shape[1]
+    n2 = i2 // n_atoms
+    c = inv[n2, :, :]
+    return np.sum(s2[:, :, None] * c[:, :, :], axis=-2)
+
+
 def neighbor_chmd(mols, cutoff, order_of_symbols):
     """Calculate duo and trio using chmd."""
     pbc = np.array(mols[0].pbc)
@@ -71,8 +79,7 @@ def neighbor_chmd(mols, cutoff, order_of_symbols):
     (positions,), valid = parallel_form.from_list([positions_lst], [0.0])
     cells = np.concatenate([atoms.cell[np.newaxis, :, :] for atoms in mols], axis=0)
     i2, j2, s2 = neighbor_duos_to_flatten_form(cells, positions, cutoff, pbc, valid)
-    repeat = np.max(number_repeats(cells, pbc, cutoff), axis=0) * 2
-    shifts = compute_shifts(repeat)
+    s2 = transform_shifts_to_direct(cells, i2, s2, positions)
     ijs2 = np.concatenate([np.array([i2, j2]), s2.T], axis=0)
     i3, j3 = neighbor_trios(i2, j2)
     assert np.all(i2[j3] == i2[i3])

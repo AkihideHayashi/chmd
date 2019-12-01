@@ -96,14 +96,14 @@ def neighbor_duos_to_serial_form(cells, positions, cutoff, pbc, valid):
 def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
                   shifts: np.ndarray, valid: np.ndarray
                   ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute neighbor pairs.
+    """Compute neighbor pairs. Inputs are assumed to be parallel form.
 
     Parameters
     ----------
     cells: float[n_batch, n_dim, n_dim]
     positions: float[n_batch, n_atoms, n_dim] direct coordinate.
     cutoff: float
-    shifts: float[n_shifts, n_dim]
+    shifts: float[n_shifts, n_dim] direct
     valid: bool[n_batch, n_atoms]
 
     Returns
@@ -113,8 +113,8 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
     The k-th bond is the bond in the n[k]-th batch,
     among which the i[k]-th bond and the j[k]-th bond.
     for all 0 <= k < len(n),
-    | (positions[n[k], i[k]] - (positions[n[k], j[k]] + s[k])) @ cells[n[k]] |
-    < cutoff
+    | (positions[n[k], i[k]] - (positions[n[k], j[k]] + s[k])) | < cutoff
+    where positions are cartesian.
 
     """
     xp = chainer.backend.get_array_module(cells)
@@ -127,18 +127,22 @@ def neighbor_duos(cells: np.ndarray, positions: np.ndarray, cutoff: float,
     # (n_batch, n_shifts, [n_dim], n_dim)
     # x @ A == xp.sum(x[:, N] * A[:, :], axis=0)
     full_shape = (n_batch, n_atoms, n_atoms, n_shifts, n_dim)
-    direct_vector = (positions[:, :, N, N, :] -
-                     positions[:, N, :, N, :] -
-                     shifts[N, N, N, :, :])
-    vector = xp.sum(
-        direct_vector[:, :, :, :, :, N] * cells[:, N, N, N, :, :], axis=-2)
+    cartesian_positions = xp.sum(positions[:, :, :, N] * cells[:, N, :, :], -2)
+    # batch, atoms, dim, dim
+    cartesian_shifts = xp.sum(shifts[N, :, :, N] * cells[:, N, :, :], -2)
+    # batch, shifts, dim, dim
+    vector = (cartesian_positions[:, :, N, N, :] -
+              cartesian_positions[:, N, :, N, :] -
+              cartesian_shifts[:, N, N, :, :])
     pow_distance = xp.sum(vector * vector, axis=-1)
+
+    # batch, atoms, atoms, shifts, dim
     assert pow_distance.shape == (n_batch, n_atoms, n_atoms, n_shifts)
     base_shape = (n_batch, n_atoms, n_atoms, n_shifts)
     n = xp.broadcast_to(xp.arange(n_batch)[:, N, N, N], base_shape)
     i = xp.broadcast_to(xp.arange(n_atoms)[N, :, N, N], base_shape)
     j = xp.broadcast_to(xp.arange(n_atoms)[N, N, :, N], base_shape)
-    s = xp.broadcast_to(shifts[N, N, N, :, :], full_shape)
+    s = xp.broadcast_to(cartesian_shifts[:, N, N, :, :], full_shape)
     in_cutoff = pow_distance <= cutoff * cutoff
     unique = ~((i == j) & xp.all(s == 0.0, axis=-1))
     isvalid = valid[:, :, N, N] & valid[:, N, :, N]
@@ -181,56 +185,37 @@ def neighbor_trios(i: np.ndarray, j: np.ndarray) -> np.ndarray:
     return idx1[filt], idx2[filt]
 
 
-def distance(cells: Variable, positions: Variable,
-             i1: np.ndarray, i2: np.ndarray, j2: np.ndarray, s2: np.ndarray):
-    """Distance, not tested yet."""
-    xp = get_array_module(cells)
-    n = i1[i2]
-    n_batches = cells.shape[0]
-    n_atoms = positions.shape[0]
-    n_pairs = len(n)
-    assert cells.shape == (n_batches, 3, 3)
-    assert positions.shape == (n_atoms, 3)
-    assert xp.max(n) < n_batches
-    assert get_array_module(positions) == xp
-    assert i2.shape == (n_pairs, )
-    assert j2.shape == (n_pairs, )
-    assert n.shape == (n_pairs, )
-    assert s2.shape == (n_pairs, 3)
-    assert isinstance(n, xp.ndarray)
-    assert isinstance(i2, xp.ndarray)
-    assert isinstance(j2, xp.ndarray)
-    assert isinstance(s2, xp.ndarray)
-    real_shifts = F.sum(cells[n, :, :] * s2[:, :, xp.newaxis], axis=1)
-    return F.sqrt(F.sum((positions[j2]
-                         + real_shifts
-                         - positions[i2]) ** 2, axis=1))
+def distance(ri: Variable, i2: np.ndarray, j2: np.ndarray, s2: np.ndarray):
+    """Calculate distances.
+
+    Parameters
+    ----------
+    r2: float[atoms, dim], cartesian, seriese form or flatten form.
+    i2: int[pair]
+    j2: int[pair]
+    s2: float[pair, dim], cartesian
+
+    """
+    return F.sqrt(F.sum((ri[j2] + s2 - ri[i2]) ** 2, axis=1))
 
 
-def distance_angle(cell: Variable, positions: Variable, i1: np.ndarray,
+def distance_angle(ri: Variable,
                    i2: np.ndarray, j2: np.ndarray, s2: np.ndarray,
                    i3: np.ndarray, j3: np.ndarray):
-    """Distance and angles. Not in use yet."""
-    n_pairs = len(i2)
-    n_trios = len(i3)
-    xp = get_array_module(positions)
-    n = i1[i2]
-    assert n.shape == (n_pairs,)
-    assert i2.shape == (n_pairs,)
-    assert j2.shape == (n_pairs,)
-    assert s2.shape == (n_pairs, 3)
-    assert i3.shape == (n_trios,)
-    assert j3.shape == (n_trios,)
-    assert get_array_module(cell) == xp
-    assert isinstance(i2, xp.ndarray), (xp, type(i2))
-    assert isinstance(j2, xp.ndarray), (xp, type(j2))
-    assert isinstance(s2, xp.ndarray), (xp, type(s2))
-    assert isinstance(i3, xp.ndarray), (xp, type(i3))
-    assert isinstance(j3, xp.ndarray), (xp, type(j3))
-    real_shifts = F.sum(cell[n, :, :] * s2[:, :, xp.newaxis], axis=1)
-    r = positions
-    rrij = (r[j2][i3] + real_shifts[i3] - r[i2][i3])
-    rrik = (r[j2][j3] + real_shifts[j3] - r[i2][j3])
+    """Calculate distance and angles.
+
+    Parameters
+    ----------
+    r2: float[atoms, dim], cartesian, seriese form or flatten form.
+    i2: int[pair]
+    j2: int[pair]
+    s2: float[pair, dim], cartesian
+    i3: int[trio]
+    j3: int[trio]
+
+    """
+    rrij = (ri[j2][i3] + s2[i3] - ri[i2][i3])
+    rrik = (ri[j2][j3] + s2[j3] - ri[i2][j3])
     rij = F.sqrt(F.sum(rrij ** 2, axis=1))
     rik = F.sqrt(F.sum(rrik ** 2, axis=1))
     cos = F.sum(rrij * rrik, axis=1) / (rij * rik)

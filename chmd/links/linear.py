@@ -33,11 +33,41 @@ class AtomWiseParamNN(ChainList):
             self.add_link(AtomNN(nl, act))
 
     def forward(self, x, e):
-        """Select and apply NN for each atoms."""
+        """Select and apply NN for each atoms.
+
+        Parameters
+        ----------
+        x: AEV
+        e: elements
+
+        """
+        xp = self.xp
         dtype = chainer.config.dtype
-        out = F.concat([n(x)[None, :, :] for n in self], axis=0)
-        n = out.shape[0]
-        condition = self.xp.arange(n)[:, None] == e[None, :]
-        zeros = self.xp.zeros(out.shape, dtype=dtype)
-        ret = F.where(condition[:, :, None], out, zeros)
-        return F.sum(ret, axis=0)
+        n_elements = len(self)
+        ret = None
+        for i in range(n_elements):
+            filt = e == i
+            result = self[i](x[filt])
+            if ret is None:
+                ret = xp.zeros((x.shape[0], *result.shape[1:]), dtype=dtype)
+            ret = F.scatter_add(ret, filt, result)
+        return ret
+
+
+def concat0(array):
+    """Concat by new axis 0."""
+    return F.concat([F.expand_dims(a, 0) for a in array], axis=0)
+
+
+class EnsembleAtomWiseParamNN(ChainList):
+    """Ensemble Version of AtomWise Param NN."""
+
+    def __init__(self, n_layers, act, n_ensemble):
+        """Initialize."""
+        super().__init__()
+        for _ in range(n_ensemble):
+            self.add_link(AtomWiseParamNN(n_layers, act))
+
+    def forward(self, x, e):
+        """Forward."""
+        return concat0([nn(x, e) for nn in self])

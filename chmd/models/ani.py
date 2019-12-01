@@ -1,366 +1,216 @@
-"""ANI-1."""
-import math
-from abc import ABC, abstractproperty, abstractmethod
+"""New ANI-1."""
 import numpy as np
 import chainer
+from chainer import Chain, functions as F
+from chainer.datasets import open_pickle_dataset, open_pickle_dataset_writer
+from chainer.dataset.convert import to_device
 from chainer.backend import get_array_module
-from chainer import Chain, Variable, ChainList, grad, report
-import chainer.functions as F
-from chmd.links.ani import ANI1AEV, ANI1AEV2EnergyFlattenForm
-from chmd.links.linear import AtomWiseParamNN
-from chmd.links.shifter import EnergyShifter
-from chmd.functions.neighbors import neighbor_duos_to_flatten_form
-from chmd.utils.batchform import flatten_form
-from chmd.math.lattice import direct_to_cartesian_chainer
-from chmd.dynamics.batch import AbstractBatch
+from chmd.utils.batchform import parallel_form, series_form
+from chmd.functions.neighbors import (neighbor_duos,
+                                      number_repeats,
+                                      compute_shifts,
+                                      neighbor_duos_to_flatten_form
+                                      )
+from chmd.links.ani import ANI1AEV
+from chmd.preprocess import symbols_to_elements
 
 
-def asarray(x):
-    if isinstance(x, Variable):
-        return x.data
-    return x
-
-# 中の処理をseries formで処理するには隣接をseriese formで渡す必要があるが、（本当？）
-# parallel formでpositions, cellsを渡して置いて、隣接だけseriese formというのはややこしすぎる。
-# 従って、ani1の集計処理をflatten formにすることで隣接も座標もparallel formで渡すことにする。
-# TODO Energy shifterをparallel formかflatten formに対応させる。
+def concat_neighbors(n_batch, n_atoms, i2_seed, j2_seed, s2_seed):
+    """Concatenate neighbors to flatten form."""
+    raising_bottom = np.arange(n_batch) * n_atoms
+    (i2_p, j2_p, s2), aff = series_form.from_list([i2_seed, j2_seed, s2_seed])
+    i2 = i2_p + raising_bottom[aff]
+    j2 = j2_p + raising_bottom[aff]
+    return i2, j2, s2
 
 
-class ANI1Batch(AbstractBatch):
+class AddAEV(object):
+    def __init__(self, params):
+        self.aev_calc = ANI1AEV(params['num_elements'], **params['aev_params'])
+        self.order = np.array(params['order'])
+        self.pbc = params['pbc']
+        self.cutoff = params['cutoff']
+    
+    def __call__(self, datas, device):
+        add_elements(datas, self.order)
+        add_neighbors(datas, self.cutoff, self.pbc, device)
+        add_aev(datas, self.aev_calc, device)
+        for data in datas:
+            del data['i2']
+            del data['j2']
+            del data['s2']
 
-    @abstractproperty
-    def positions(self):
-        ...
-
-    @abstractproperty
-    def elements(self):
-        ...
-
-    @abstractproperty
-    def cells(self):
-        ...
-
-    @abstractproperty
-    def valid(self):
-        ...
-
-    @abstractproperty
-    def potential_energies(self):
-        ...
-
-    @potential_energies.setter
-    def potential_energies(self, _):
-        ...
-
-    @abstractproperty
-    def forces(self):
-        ...
-
-    @forces.setter
-    def forces(self, _):
-        ...
-
-    @abstractproperty
-    def error(self):
-        ...
-
-    @error.setter
-    def error(self, _):
-        ...
-
-    @abstractproperty
-    def atomic_error(self):
-        ...
-
-    @atomic_error.setter
-    def atomic_error(self, _):
-        ...
-
-    @abstractmethod
-    def xp(self):
-        ...
+def add_elements(datas, order):
+    symbols = [data['symbols'] for data in datas]
+    [sym], valid = parallel_form.from_list([symbols], [''])
+    elem = symbols_to_elements(sym, order)
+    for i, data in enumerate(datas):
+        data['elements'] = elem[i][valid[i]]
 
 
-def grad_to_force(grads, cells):
-    """Calculate forces from gradients in direct positoins.
-
-    Parameters
-    ----------
-    grads: (batch, atoms, dim)
-    cells: (batch, dim, dim)
-
-    """
-    xp = get_array_module(grads)
-    L = xp.linalg.inv(cells)  # (batch x dim x dim)
-    LT = L.transpose((0, 2, 1))  # (batch x dim x dim)
-    G = xp.sum(LT[:, :, :, None] * L[:, None, :, :], axis=-2)
-    return - xp.sum(G[:, None, :, :] * grads[:, :, None, :], axis=-1)
-
-
-class ANI1ForceField(object):
-    def __init__(self, params, path, neighbor_list, name='ANI1'):
-        self.model = ANI1(**params)
-        chainer.serializers.load_npz(path, self.model)
-        self.neighbor_list = neighbor_list
-        self.name = name
-
-    def __call__(self, batch: ANI1Batch):
-        xp = batch.xp
-        n_batch, n_atoms, n_dim = batch.positions.shape
-        n_emsemble = self.model.n_agents
-        to_ub = math.sqrt(n_emsemble / (n_emsemble - 1))
-        i2, j2, s2 = self.neighbor_list(batch)
-        positions = Variable(batch.positions)
-        elements = batch.elements
-        cells = Variable(batch.cells)
-        valid = batch.valid  # (batch, atoms)
-        assert valid.shape == (n_batch, n_atoms)
-        number_of_atoms = xp.sum(valid, 1)
-        assert number_of_atoms.shape == (n_batch, )
-        atomic_energies = self.model(
-            cells, elements, positions, valid, i2, j2, s2)
-        assert atomic_energies.shape == (n_emsemble, n_batch, n_atoms)
-        molecular_energies = F.sum(atomic_energies, 2)  # (ensemble, batch)
-        assert molecular_energies.shape == (n_emsemble, n_batch)
-        mean_molecular_energies = F.mean(molecular_energies, 0)  # (batch)
-        var_molecular_energies = (
-            F.mean(molecular_energies ** 2, 0)
-            - mean_molecular_energies ** 2)
-        std_molecular_energies = F.sqrt(var_molecular_energies) * to_ub
-        assert mean_molecular_energies.shape == (n_batch, )
-        assert var_molecular_energies.shape == (n_batch, )
-
-        atomic_std = atomic_energies.data.std(0) * to_ub
-
-        batch.potential_energies = mean_molecular_energies.data
-        batch.error = std_molecular_energies.data / xp.sqrt(number_of_atoms)
-        batch.atomic_error = atomic_std
-
-        grads, = grad([mean_molecular_energies], [positions])
-        batch.forces = grad_to_force(grads.data, cells.data)
+def add_neighbors(datas, cutoff, pbc, device):
+    direct = [data['positions'] for data in datas]
+    cells = np.array([data['cell'] for data in datas])
+    [direct], valid = parallel_form.from_list([direct], [0.0])
+    cells = to_device(device, cells)
+    direct = to_device(device, direct)
+    pbc = to_device(device, pbc)
+    valid = to_device(device, valid)
+    xp = get_array_module(direct)
+    repeat = xp.min(number_repeats(cells, pbc, cutoff), axis=0)
+    shifts = compute_shifts(repeat)
+    n2, i2, j2, s2 = neighbor_duos(cells, direct, cutoff, shifts, valid)
+    for i, data in enumerate(datas):
+        selecter = n2 == i
+        data['i2'] = i2[selecter]
+        data['j2'] = j2[selecter]
+        data['s2'] = s2[selecter]
 
 
+def add_aev(datas, aev_calc, device):
+    direct = [data['positions'] for data in datas]
+    cells = np.array([data['cell'] for data in datas])
+    elements = [data['elements'] for data in datas]
+    [direct, elements], valid = parallel_form.from_list(
+        [direct, elements], [0.0, -1])
+    cells = to_device(device, cells)
+    direct = to_device(device, direct)
+    elements = to_device(device, elements)
+    valid = to_device(device, valid)
+    xp = get_array_module(direct)
+    cartesian = xp.sum(direct[:, :, :, None] * cells[:, None, :, :], axis=-2)
+    n_batch, n_atoms, n_dim = cartesian.shape
+    ri = cartesian.reshape((n_batch * n_atoms, n_dim))
+    ei = elements.reshape((n_batch * n_atoms, ))
+    i2_seed = [data['i2'] for data in datas]
+    j2_seed = [data['j2'] for data in datas]
+    s2_seed = [data['s2'] for data in datas]
+    i2, j2, s2 = concat_neighbors(n_batch, n_atoms, i2_seed, j2_seed, s2_seed)
+    aev = aev_calc(ri, ei, i2, j2, s2)  # (batch * atoms, features)
+    n_feature = aev.shape[-1]
+    aev_parallel = aev.reshape((n_batch, n_atoms, n_feature))
+    aev_cpu = to_device(-1, aev_parallel.data)
+    valid = to_device(-1, valid)
+    for i, data in enumerate(datas):
+        data['aev'] = aev_cpu[i][valid[i]]
 
-class ANI1(Chain):
-    """ANI-1 energy calculator."""
 
-    def __init__(self, num_elements, aev_params, nn_params,
-                 cutoff, pbc, n_agents, order):
-        """Initializer."""
+# def add_elements_aev(aev_calc, datas, order, device, cutoff, pbc):
+#     """Add aev to data."""
+#     positions = [d['positions'] for d in datas]
+#     symbols = [d['symbols'] for d in datas]
+#     lst, valid = parallel_form.from_list([positions, symbols], [0.0, ''])
+
+#     cells = to_device(device, np.array([d['cell'] for d in datas]))
+#     positions = to_device(device, lst[0])
+#     elements = to_device(device, symbols_to_elements(lst[1], order))
+#     valid = to_device(device, valid)
+#     n_batch, n_atoms, n_dim = positions.shape
+#     i2, j2, s2 = neighbor_duos_to_flatten_form(
+#         cells, positions, cutoff, pbc, valid
+#     )
+#     xp = get_array_module(positions)
+#     cart = xp.sum(
+#         positions[:, :, :, None] * cells[:, None, :, :],
+#         axis=-2)
+#     # batch, atoms, dim, dim
+#     ri = cart.reshape((n_batch * n_atoms, n_dim))
+#     ei = elements.reshape((n_batch * n_atoms))
+#     aev = aev_calc(ri, ei, i2, j2, s2)  # (batch * atoms, features)
+#     _, n_feature = aev.shape
+#     aev_parallel = aev.reshape((n_batch, n_atoms, n_feature))
+#     aev_cpu = to_device(-1, aev_parallel.data)
+#     valid = to_device(-1, valid)
+#     elements = to_device(-1, elements)
+#     for i, data in enumerate(datas):
+#         data['aev'] = aev_cpu[i][valid[i]]
+#         data['elements'] = elements[i][valid[i]]
+
+
+def preprocess(inp_path, out_path, batch_size, pbc, cutoff, device, trans):
+    """Preprocess data."""
+    datasets = {}
+    with open_pickle_dataset(inp_path) as fi:
+        with open_pickle_dataset_writer(out_path) as fo:
+            for i, data in enumerate(fi):
+                cell = data['cell']
+                repeats = tuple(number_repeats(
+                    cell, pbc, cutoff).astype(np.int64).tolist())
+                if repeats not in datasets:
+                    datasets[repeats] = [data]
+                else:
+                    datasets[repeats].append(data)
+                    if len(datasets[repeats]) > batch_size:
+                        datas = datasets.pop(repeats)
+                        print('{} process for {}'.format(i, repeats))
+                        trans(datas, device)
+                        for d in datas:
+                            fo.write(d)
+            keys = list(datasets.keys())
+            for repeats in keys:
+                datas = datasets.pop(repeats)
+                print('process for {}'.format(repeats))
+                trans(datas, device)
+                for d in datas:
+                    fo.write(d)
+
+
+class ANI1EnergyLoss(Chain):
+    """ANI1 Energy loss only from aevs."""
+
+    def __init__(self, models):
+        """Initialize."""
         super().__init__()
         with self.init_scope():
-            # recieve flatten form and return flatten form.
-            self.aev = ANI1AEV(num_elements, **aev_params)
-            self.energies = ChainList(*[AtomWiseParamNN(**nn_params)
-                                        for _ in range(n_agents)])  # reciece flatten form.
-            self.shift = EnergyShifter(num_elements)
-        self.add_persistent('pbc', pbc)
-        self.cutoff = cutoff
-        self.n_agents = n_agents
-        self.order = order
+            self.nn = models
 
-    def forward(self, cells, elements, positions, valid, i2, j2, s2,
-                cartesian_positions=None):
-        """Apply. All inputs are assumed to be passed as parallel form.
-
-        However, i2, j2, s2 are assumed to be flatten from.
+    def forward(self, aevs, elements, energies, valid):
+        """Calculate energy loss from aev. Input is assumed to be parallel form.
 
         Parameters
         ----------
-        cells: (n_batch x n_dim x n_dim)
-        elements: (n_batch x n_atoms)
-        positions: (n_batch x n_atoms x n_dim) direct coordinate.
-        valid: bool(n_batch x n_atoms) True if is_atom. False if dummy.
-        i2, j2: (n_bond) flatten form based.
-        s2: (n_bond, n_free) flatten form based.
-
-        Returns
-        -------
-        energies: (n_parallel, n_batch)
+        aevs: float(n_batch, n_atoms, n_features)
+        elements: int(n_batch, n_atoms)
+        energies: float(n_batch,)
+        valids: bool(n_batch, n_atoms)
 
         """
         xp = self.xp
-        if cartesian_positions is None:
-            in_cell_positions = positions - positions // 1
-            cartesian_positions = direct_to_cartesian_chainer(
-                cells, in_cell_positions)
-        n_batch, n_atoms = elements.shape
-        # Fist, make all to flatten form.
-        v1, i1 = flatten_form.valid_affiliation_from_parallel(valid)
-        (ei, ri), v1, i1 = flatten_form.from_parallel(
-            [elements, cartesian_positions], valid)
-        # Second calculate AEV.
-        aev = self.aev(cells, ri, ei, i1, i2, j2, s2)
-        # Third calculate energies
-        shift = self.shift(ei)
-        # List[(n_batch * n_atoms)]
-
-        def calculate_atomic_valid(en):
-            energies = en(aev, ei)  # (n_batch * n_atoms, n_quantities)
-            atomic_novalid = F.squeeze(energies, axis=1) + shift
-            # (n_batch * n_atoms)
-
-            atomic_valid = F.where(v1,
-                                   atomic_novalid,
-                                   xp.zeros_like(atomic_novalid.data))
-            return F.reshape(atomic_valid, (1, n_batch, n_atoms))
-
-        # (n_parallel, n_batch, n_atoms)
-        atomic_energies = F.concat([calculate_atomic_valid(e)
-                                    for e in self.energies], axis=0)
-        return atomic_energies
+        n_ensemble = len(self.nn)
+        n_batch, n_atoms, n_features = aevs.shape
+        flatten_aev = F.reshape(aevs, (n_batch * n_atoms, n_features))
+        flatten_elements = F.reshape(elements, (n_batch * n_atoms))
+        flatten_predict = self.nn(flatten_aev, flatten_elements)
+        predict_atomwise = F.reshape(flatten_predict,
+                                     (n_ensemble, n_batch, n_atoms))
+        predict = F.sum(predict_atomwise, 2)
+        assert xp.all(predict.data[~valid] == 0.0)
+        assert predict.shape == (n_ensemble, n_batch)
+        diff = predict - energies[xp.newaxis, :, :]
+        power_diff = diff * diff
+        mean_power_diff = F.mean(power_diff, 1)
+        assert mean_power_diff.shape == (n_ensemble,)
+        return F.sum(mean_power_diff)
 
 
-def atomic_energies_to_molecular_energies(atomic_energies):
-    """Sum up atomic energies.
+@chainer.dataset.converter()
+def converter_concat_neighbors(batch, device):
+    """Not tested yet."""
+    lst_keys = ['aev', 'elements']
+    paddings = [0.0, -1]
+    lst = [[atoms[key] for atoms in batch] for key in lst_keys]
+    parallels, valid = parallel_form.from_list(lst, paddings)
+    aevs = parallels[0]
+    elements = parallels[1]
+    energies = np.array([atoms['energy'] for atoms in batch])
 
-    Parameters
-    ----------
-    atomic_energies: (n_agents, n_batch, n_atoms)
-
-    """
-    return F.sum(atomic_energies, axis=2)
-
-
-class ANI1EnergyGradLoss(Chain):
-    """Energy + Grad."""
-
-    def __init__(self, predictor, ce, cf):
-        """Initializer.
-
-        Paramters
-        ---------
-        ce: coeffient for energy.
-        cf: coeffient for forces.
-
-        """
-        super().__init__()
-        with self.init_scope():
-            self.predictor = predictor
-        self.ce = ce
-        self.cf = cf
-
-    def forward(self, cells, elements, positions, valid,
-                i2, j2, s2, energies, forces):
-        """Please be aware that positions is direct coordinate.
-        However, forces is eV / Angstrome.
-        It is vasprun.xml 's setting. And it is convenient for calculate loss.
-
-        Parameters
-        ----------
-        cells: float[n_batch, n_dim, n_dim] Angsgrome
-        elements: int[n_batch, n_atoms]
-        positions: float[n_batch, n_atoms, n_dim] direct coordinate.
-        valid: bool[n_batch, n_atoms]
-        i2: int[n_pairs]
-        j2: int[n_pairs]
-        s2: int[n_pairs, n_dim]
-        energies: float[n_batch] eV
-        forces: float[n_batch, n_atoms, n_dim] eV / Angstrome
-
-        """
-        ri_direct = Variable(positions - positions // 1)
-        ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
-        # n_agents x n_batch
-        en_predict = atomic_energies_to_molecular_energies(
-            self.predictor(cells, elements, positions,
-                           valid, i2, j2, s2,
-                           cartesian_positions=ri_cartesian)
-        )
-        assert en_predict.ndim == 2
-        loss_e = 0.0
-        loss_f = 0.0
-        for i in range(self.predictor.n_agents):
-            fi, = grad([-en_predict[i, :]], [ri_cartesian],
-                       enable_double_backprop=True)
-            loss_e += F.mean_squared_error(en_predict[i, :], energies)
-            loss_f += F.mean_squared_error(fi, forces)
-        loss_e /= self.predictor.n_agents
-        loss_f /= self.predictor.n_agents
-        report({'loss_e': loss_e.data}, self)
-        report({'loss_f': loss_f.data}, self)
-        loss = self.ce * loss_e + self.cf * loss_f
-        report({'loss': loss.data}, self)
-        return loss
-
-
-class EnergyForceVar(Chain):
-    """Energy + Grad."""
-
-    def __init__(self, predictor):
-        """Initializer.
-
-        Paramters
-        ---------
-        ce: coeffient for energy.
-        cf: coeffient for forces.
-
-        """
-        super().__init__()
-        with self.init_scope():
-            self.predictor = predictor
-
-    def __call__(self, positions, *args, **kwargs):
-        """Loss.
-
-        Parameters
-        ----------
-        target: Chain.
-        ri: positions.
-        e: Energy (ground truth.)
-        f: Force (ground truth.)
-
-        """
-        ri = Variable(positions)
-        # n_agents x n_batch
-        en = self.predictor(positions=ri, *args, **kwargs)
-        mean = F.mean(en, axis=0)
-        n2 = F.mean(en * en, axis=0)
-        var = n2 - mean * mean
-        force, = grad([-mean], [ri])
-        return mean.data, force.data, var.data
-
-
-class ANI1EachEnergyGradLoss(Chain):
-    """Energy + Grad."""
-
-    def __init__(self, predictor, ce, cf):
-        """Initializer.
-
-        Paramters
-        ---------
-        ce: coeffient for energy.
-        cf: coeffient for forces.
-
-        """
-        super().__init__()
-        with self.init_scope():
-            self.predictor = predictor
-        self.ce = ce
-        self.cf = cf
-
-    def forward(self, cells, elements, positions, valid,
-                i2, j2, s2, energies, forces):
-        """Loss.
-
-        Parameters
-        ----------
-        target: Chain.
-        ri: positions.
-        e: Energy (ground truth.)
-        f: Force (ground truth.)
-
-        """
-        ri_direct = Variable(positions - positions // 1)
-        ri_cartesian = direct_to_cartesian_chainer(cells, ri_direct)
-        # n_agents x n_batch
-        en_predict = atomic_energies_to_molecular_energies(
-            self.predictor(cells, elements, positions,
-                           valid, i2, j2, s2,
-                           cartesian_positions=ri_cartesian))
-        assert en_predict.ndim == 2
-        mean = F.mean(en_predict, axis=0)
-        force, = grad([-mean], [ri_cartesian])
-        loss_e = (mean - energies) ** 2
-        loss_f = F.mean(F.mean((force - forces) ** 2, axis=-1), axis=-1)
-        return self.ce * loss_e.data + self.cf * loss_f.data
+    dtype = chainer.config.dtype
+    return_dict = {
+        'aevs': aevs.astype(dtype),
+        'elements': elements,
+        'valid': valid,
+        'energies': energies.astype(dtype),
+    }
+    for key in return_dict:
+        return_dict[key] = to_device(device, return_dict[key])
+    return return_dict
