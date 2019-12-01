@@ -2,7 +2,8 @@ from xml.etree import ElementTree
 import tarfile
 from chainer.datasets import open_pickle_dataset_writer
 from chmd.database.vasprun import read_calculation, read_symbols, read_nelm
-from chmd.models.ani import preprocess, add_aev, AddAEV
+from chmd.models.ani import ANI1Preprocessor
+from chmd.preprocess import preprocess
 from chmd.functions.activations import gaussian
 from chmd.links.ani import ANI1AEV
 
@@ -60,6 +61,8 @@ def tarfile_to_pickle(tarpath, picklepath):
                     data['generation'] = 'mdminimize'
                     data['vasprun'] = name
                     f.write(data)
+
+
 import numpy as np
 aev_calc = ANI1AEV(params['num_elements'], **params['aev_params'])
 
@@ -79,10 +82,10 @@ def trans2(datas, device):
 def main():
     tarfile_path = '../../../note/vaspruns.tar'
     pickle_path = '../../../note/tmp.pkl'
-    out_path = '../../../note/processed3.pkl'
+    out_path = '../../../note/processed4.pkl'
     batch_size = 200
     # tarfile_to_pickle(tarfile_path, pickle_path)
-    preprocess(pickle_path, out_path, batch_size, params['pbc'], params['cutoff'], -1, AddAEV(params))
+    preprocess(pickle_path, out_path, batch_size, -1, ANI1Preprocessor(params))
 
 
 if __name__ == "__main__":

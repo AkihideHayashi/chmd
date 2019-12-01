@@ -7,6 +7,7 @@ import chainer.functions as F
 from chainer import Variable
 from chainer.backend import get_array_module
 from chmd.math.xp import repeat_interleave, cumsum_from_zero, cartesian_product
+from chmd.utils.batchform import series_form
 
 
 def number_repeats(cell: np.ndarray, pbc: np.ndarray,
@@ -238,3 +239,12 @@ def trio_index(num_elements: int, xp):
     ret = xp.zeros([num_elements, num_elements, num_elements], dtype=xp.int32)
     ret[p1, p2, p3] = xp.arange(num_elements * num_elements * num_elements)
     return ret
+
+
+def concat_neighbors_flatten_form(n_batch, n_atoms, i2_seed, j2_seed, s2_seed):
+    """Concatenate neighbors to flatten form."""
+    raising_bottom = np.arange(n_batch) * n_atoms
+    (i2_p, j2_p, s2), aff = series_form.from_list([i2_seed, j2_seed, s2_seed])
+    i2 = i2_p + raising_bottom[aff]
+    j2 = j2_p + raising_bottom[aff]
+    return i2, j2, s2
