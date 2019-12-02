@@ -7,7 +7,8 @@ from chmd.models.ani import (concat_aev,
                              ANI1AEV2EnergyWithShifter,
                              ANI1AEV2EnergyNet,
                              ANI1EnergyLoss,
-                             ANI1Preprocessor
+                             ANI1Preprocessor,
+                             ANI1WeightedEnergyLoss,
                              )
 from chmd.links.ensemble import EnsemblePredictor
 from chmd.datasets import split_dataset_by_key
@@ -54,7 +55,9 @@ def learn(dataset_path, params, out, purpose, batch_size, max_epoch, device_id, 
         train_keys = [i for i, data in enumerate(all_dataset) if data['status'] == 'train' and i != 0]
         print("Number of train keys:", len(train_keys), flush=True)
         train_dataset, _ = split_dataset_by_key(all_dataset, train_keys)
-        loss = ANI1EnergyLoss(model)
+        # loss = ANI1EnergyLoss(model)
+        kb = 11604.59
+        loss = ANI1WeightedEnergyLoss(model, temperature=300 * kb)
         optimizer.setup(loss)
         train_iter = chainer.iterators.MultiprocessIterator(
             train_dataset, batch_size)

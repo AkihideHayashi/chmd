@@ -153,6 +153,31 @@ class ANI1AEV2EnergyNet(Chain):
         assert xp.all(energies.data[~valid] == 0.0)
         return energies
 
+class ANI1WeightedEnergyLoss(Chain):
+    def __init__(self, model, temperature):
+        super().__init__()
+        with self.init_scope():
+            self.model = model
+        self.temperature = temperature
+    
+    def forward(self, aevs, elements, energies, valid):
+        xp = self.xp
+        n_ensemble = len(self.model)
+        n_batch, n_atoms, n_features = aevs.shape
+        predict_atomwise = self.model(aevs, elements, valid)
+        for i in range(n_ensemble):
+            assert xp.all(predict_atomwise.data[i][~valid] == 0.0)
+        predict = F.sum(predict_atomwise, axis=2)
+        assert predict.shape == (n_ensemble, n_batch), "{} != ({}, {})".format(predict.shape, n_ensemble, n_batch)
+        diff = predict - energies[xp.newaxis, :]  # (ensemble, batch)
+        power_diff = diff * diff
+        number_atoms = xp.sum(valid, axis=1)
+
+        base = xp.min(energies / number_atoms)
+        weights = xp.exp((base - energies / number_atoms) / self.temperature)  # (batch,)
+        loss = F.sum(power_diff * weights / number_atoms / number_atoms) / n_batch / xp.sum(weights)
+        report({'loss': loss.data}, self)
+        return loss
 
 class ANI1EnergyLoss(Chain):
     """ANI1 Energy loss from aevs."""
