@@ -15,6 +15,7 @@ from chmd.links.shifter import EnergyShifter
 from chmd.links.linear import AtomWiseParamNN
 from chmd.links.ani import ANI1AEV
 from chmd.preprocess import symbols_to_elements, Preprocessor
+from chmd.links.energy import EnergyNet
 
 
 class ANI1Preprocessor(Preprocessor):
@@ -109,12 +110,12 @@ class ANI1Preprocessor(Preprocessor):
 
 
 class ANI1AEV2EnergyWithShifter(Chain):
-    def __init__(self, num_elements, nn_params):
+    def __init__(self, nn_params, shift_params):
         super().__init__()
         with self.init_scope():
             self.nn = AtomWiseParamNN(**nn_params)
-            self.shifter = EnergyShifter(num_elements)
-    
+            self.shifter = EnergyShifter(**shift_params)
+
     def forward(self, aevs, elements, valid):
         """Inputs are assumed to be parallel form."""
         xp = get_array_module(aevs)
@@ -128,6 +129,28 @@ class ANI1AEV2EnergyWithShifter(Chain):
         flatten_energies = flatten_aev_energies + flatten_elm_energies
         energies = F.reshape(flatten_energies, (n_batch, n_atoms))
         energies = F.where(valid, energies, xp.zeros_like(energies.data))
+        return energies
+
+
+class ANI1AEV2EnergyNet(Chain):
+    def __init__(self, nn_params, energy_params):
+        super().__init__()
+        with self.init_scope():
+            self.nn = AtomWiseParamNN(**nn_params)
+            self.en = EnergyNet(**energy_params)
+    
+    def forward(self, aevs, elements, valid):
+        """Inputs are assumed to be parallel form."""
+        xp = get_array_module(aevs)
+        n_batch, n_atoms, n_features = aevs.shape
+        assert elements.shape == (n_batch, n_atoms)
+        assert valid.shape == (n_batch, n_atoms)
+        flatten_aevs = F.reshape(aevs, (n_batch * n_atoms, n_features))
+        flatten_elms = xp.reshape(elements, (n_batch * n_atoms,))
+        flatten_features = self.nn(flatten_aevs, flatten_elms)
+        energies = self.en(flatten_features, flatten_elms)
+        energies = F.reshape(energies, (n_batch, n_atoms))
+        assert xp.all(energies.data[~valid] == 0.0)
         return energies
 
 

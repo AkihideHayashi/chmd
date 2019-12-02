@@ -1,46 +1,18 @@
 """Learn."""
-import os
 import json
 import chainer
 from chainer.datasets import open_pickle_dataset
 from chainer.training import updaters, triggers, extensions
-from chmd.models.ani import ANI1AEV2EnergyWithShifter, ANI1EnergyLoss, concat_aev
+from chmd.models.ani import (ANI1AEV2EnergyWithShifter,
+                             ANI1EnergyLoss, concat_aev, ANI1AEV2EnergyNet)
 from chmd.links.ensemble import EnsemblePredictor
-from chmd.functions.activations import gaussian, shifted_softplus
 from chmd.datasets import split_dataset_by_key
 from chmd.training.triggers.purpose_trigger import PurposeTrigger
 
 
 def main():
-    params = {
-        "num_elements": 3,
-        "aev_params": {
-            "radial": {
-                "cutoff": 9.0,
-                "head": 0.7,
-                "tail": 9.0,
-                "step": 0.25,
-                "sigma": 0.25
-            },
-            "angular": {
-                "cutoff": 3.5,
-                "head": 0.7,
-                "tail": 3.5,
-                "step": 0.4,
-                "sigma": 0.4,
-                "ndiv": 9,
-                "zeta": 32.0
-            }
-        },
-        "nn_params": {
-            "n_layers": [[128, 128, 1], [128, 128, 1], [128, 128, 1]],
-            "act": gaussian
-        },
-        "cutoff": 9.0,
-        "pbc": [True, True, True],
-        "n_ensemble": 1,
-        "order": ["H", "C", "Pt"]
-    }
+    with open('ani.json') as f:
+        params = json.load(f)
     dataset_path = '../../../note/processed.pkl'
     out = '../../../note/result'
     purpose = 0.01
@@ -53,20 +25,20 @@ def main():
 
 def learn(dataset_path, params, out, purpose, batch_size, max_epoch, device_id, optimizer):
     """Learn paramter from data."""
-    model = EnsemblePredictor(params['n_ensemble'],
-                              lambda: ANI1AEV2EnergyWithShifter(
-        params['num_elements'], params['nn_params']))
+    model = EnsemblePredictor(
+        params['n_ensemble'],
+        lambda: ANI1AEV2EnergyNet(params['nn_params'], params['energy_params'])
+        )
+    # model = EnsemblePredictor(
+    #     params['n_ensemble'],
+    #     lambda: ANI1AEV2EnergyWithShifter(params['nn_params'], params['shift_params'])
+    #     )
     with open_pickle_dataset(dataset_path) as all_dataset:
         all_dataset = list(all_dataset)
         print('Selecting valid keys.', flush=True)
         train_keys = [i for i, data in enumerate(all_dataset) if data['status'] == 'train' and i != 0]
         print("Number of train keys:", len(train_keys), flush=True)
         train_dataset, _ = split_dataset_by_key(all_dataset, train_keys)
-        for m in model:
-            m.shifter.setup(
-                elements=[d['elements'] for d in train_dataset],
-                energies=[d['energy'] for d in train_dataset]
-            )
         loss = ANI1EnergyLoss(model)
         optimizer.setup(loss)
         train_iter = chainer.iterators.MultiprocessIterator(

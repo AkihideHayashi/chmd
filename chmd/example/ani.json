@@ -1,0 +1,35 @@
+{
+    "num_elements": 3,
+    "aev_params": {
+        "radial": {
+            "cutoff": 9.0,
+            "head": 0.7,
+            "tail": 9.0,
+            "step": 0.25,
+            "sigma": 0.25
+        },
+        "angular": {
+            "cutoff": 3.5,
+            "head": 0.7,
+            "tail": 3.5,
+            "step": 0.4,
+            "sigma": 0.4,
+            "ndiv": 9,
+            "zeta": 32.0
+        }
+    },
+    "nn_params": {
+        "n_layers": [[128, 128, 1], [128, 128, 1], [128, 128, 1]],
+        "act": "gaussian"
+    },
+    "energy_params": {
+        "energy_ranges": [[-30.0, 2000.0], [-30.0, 2000.0], [-30.0, 2000.0]]
+    },
+    "shift_params": {
+        "coef": [0.0, 0.0, 0.0]
+    },
+    "cutoff": 9.0,
+    "pbc": [true, true, true],
+    "n_ensemble": 1,
+    "order": ["H", "C", "Pt"]
+}

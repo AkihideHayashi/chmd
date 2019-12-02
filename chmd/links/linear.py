@@ -3,6 +3,7 @@ import chainer
 from chainer import ChainList
 import chainer.links as L
 import chainer.functions as F
+from chmd.functions.activations import parse_act
 
 
 class AtomNN(ChainList):
@@ -13,7 +14,7 @@ class AtomNN(ChainList):
         super().__init__()
         for nl in n_layers:
             self.add_link(L.Linear(None, nl, nobias=False))
-        self.act = act
+        self.act = parse_act(act)
 
     def forward(self, x):
         """Compute for each atoms."""

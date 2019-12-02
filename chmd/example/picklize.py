@@ -5,7 +5,6 @@ from chmd.database.vasprun import read_calculation, read_symbols, read_nelm
 from chmd.models.ani import ANI1Preprocessor
 from chmd.preprocess import preprocess
 from chmd.functions.activations import gaussian
-from chmd.links.ani import ANI1AEV
 
 params = {
     "num_elements": 3,
@@ -53,38 +52,19 @@ def tarfile_to_pickle(tarpath, picklepath):
                     data = read_calculation(calc, nelm)
                     if not data:
                         continue
-                    if data['energy'] < 0.0:
-                        data['status'] = 'train'
-                    else:
-                        data['status'] = 'drain'
+                    data['status'] = 'train'
                     data['symbols'] = symbols
                     data['generation'] = 'mdminimize'
                     data['vasprun'] = name
                     f.write(data)
 
 
-import numpy as np
-aev_calc = ANI1AEV(params['num_elements'], **params['aev_params'])
-
-def trans(datas, device):
-    add_elements_aev(aev_calc, datas, np.array(params['order']), device, params['cutoff'], params['pbc'])
-
-def trans2(datas, device):
-    add_elements(datas, params['order'])
-    add_neighbors(datas, params['cutoff'], params['pbc'], device)
-    add_aev(datas, aev_calc, device)
-    for data in datas:
-        del data['i2']
-        del data['j2']
-        del data['s2']
-
-
 def main():
     tarfile_path = '../../../note/vaspruns.tar'
     pickle_path = '../../../note/tmp.pkl'
-    out_path = '../../../note/processed4.pkl'
+    out_path = '../../../note/processed.pkl'
     batch_size = 200
-    # tarfile_to_pickle(tarfile_path, pickle_path)
+    tarfile_to_pickle(tarfile_path, pickle_path)
     preprocess(pickle_path, out_path, batch_size, -1, ANI1Preprocessor(params))
 
 
