@@ -140,7 +140,7 @@ class ANI1AEV2EnergyNet(Chain):
             self.en = EnergyNet(**energy_params)
     
     def forward(self, aevs, elements, valid):
-        """Inputs are assumed to be parallel form."""
+        """Input are assumed to be parallel form."""
         xp = get_array_module(aevs)
         n_batch, n_atoms, n_features = aevs.shape
         assert elements.shape == (n_batch, n_atoms)

@@ -13,7 +13,7 @@ class EnergyNet(object):
     
     def __call__(self, features, elements):
         xp = get_array_module(features)
-        device = get_device_from_array(features)
+        device = get_device_from_array(elements)
         dtype = chainer.config.dtype
         n_atoms, n_features = features.shape
         assert elements.shape == (n_atoms,)
