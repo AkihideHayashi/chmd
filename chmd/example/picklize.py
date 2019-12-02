@@ -6,35 +6,6 @@ from chmd.models.ani import ANI1Preprocessor
 from chmd.preprocess import preprocess
 from chmd.functions.activations import gaussian
 
-params = {
-    "num_elements": 3,
-    "aev_params": {
-        "radial": {
-            "cutoff": 9.0,
-            "head": 0.7,
-            "tail": 9.0,
-            "step": 0.25,
-            "sigma": 0.25
-        },
-        "angular": {
-            "cutoff": 3.5,
-            "head": 0.7,
-            "tail": 3.5,
-            "step": 0.4,
-            "sigma": 0.4,
-            "ndiv": 9,
-            "zeta": 32.0
-        }
-    },
-    "nn_params": {
-        "n_layers": [[128, 128, 1], [128, 128, 1], [256, 256, 1]],
-        "act": gaussian
-    },
-    "cutoff": 9.0,
-    "pbc": [True, True, True],
-    "n_agents": 4,
-    "order": ["H", "C", "Pt"]
-}
 
 def tarfile_to_pickle(tarpath, picklepath):
     with tarfile.open(tarpath) as tar:
@@ -60,6 +31,8 @@ def tarfile_to_pickle(tarpath, picklepath):
 
 
 def main():
+    with open('ani.json') as f:
+        params = json.load(f)
     tarfile_path = '../../../note/vaspruns.tar'
     pickle_path = '../../../note/tmp.pkl'
     out_path = '../../../note/processed.pkl'
