@@ -22,7 +22,7 @@ def symbols_to_elements(symbols: np.ndarray,
     condlist = s[None, :] == order[:, None]
     # assert np.all(np.any(condlist, axis=0))
     choicelist = np.arange(len(order))
-    elements = np.select(condlist, choicelist).reshape(shape)
+    elements = np.select(condlist, choicelist, default=-1).reshape(shape)
     valid = symbols != ''
     assert np.all(order[elements[valid]] == symbols[valid])
     return elements

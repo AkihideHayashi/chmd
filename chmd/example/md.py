@@ -5,7 +5,7 @@ import chainer
 from chainer import report, get_current_reporter
 from chainer.dataset.convert import to_device
 from chmd.dynamics.dynamics import VelocityScaling, MolecularDynamicsBatch
-from chmd.models.ani import ANI1ForceField
+from chmd.models.ani import ANI1, ANI1AEV2EnergyNet, ANI1ForceField
 from chmd.dynamics.ani import BasicNeighborList, ANI1MolecularDynamicsBatch
 from chmd.dynamics.dynamics import Extension
 from chmd.functions.activations import gaussian
@@ -135,35 +135,8 @@ def append_json(data: dict, path: str):
 
 
 def main():
-    params = {
-        "num_elements": 3,
-        "aev_params": {
-            "radial": {
-                "cutoff": 9.0,
-                "head": 0.7,
-                "tail": 9.0,
-                "step": 0.25,
-                "sigma": 0.25
-            },
-            "angular": {
-                "cutoff": 3.5,
-                "head": 0.7,
-                "tail": 3.5,
-                "step": 0.4,
-                "sigma": 0.4,
-                "ndiv": 9,
-                "zeta": 32.0
-            }
-        },
-        "nn_params": {
-            "n_layers": [[128, 128, 1], [128, 128, 1], [128, 128, 1]],
-            "act": gaussian
-        },
-        "cutoff": 9.0,
-        "pbc": [True, True, True],
-        "n_agents": 4,
-        "order": ["H", "C", "Pt"]
-    }
+    with open('ani.json') as f:
+        params = json.load(f)
     dtype = chainer.config.dtype
     cell = np.eye(3) * 10.0
     min_distance = 2.7
@@ -174,7 +147,10 @@ def main():
     ratio = np.array([1.0, 1.0, 1.0])
     batch = random_batch(cell, min_distance, n_atoms, max_cycle, ratio, n_batch,
                          params, 'result/best_model', masses=np.array([10.0, 10.0, 10.0]))
-    efv = ANI1ForceField(params, 'result/best_model', BasicNeighborList(9.0))
+    # efv = ANI1ForceField(params, 'result/best_model', BasicNeighborList(9.0))
+    model = ANI1(ANI1AEV2EnergyNet, **params)
+    # chainer.serializers.load_npz('result/best_model')
+    efv = ANI1ForceField(model, BasicNeighborList(9.0))
     batch.to_device(device_id)
     efv.model.to_device(device_id)
     kbt = np.ones(n_batch).astype(dtype) * 600 * kB
