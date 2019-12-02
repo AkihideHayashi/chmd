@@ -29,7 +29,7 @@ class ANI1Preprocessor(Preprocessor):
         """
         self.aev_calc = ANI1AEV(params['num_elements'], **params['aev_params'])
         self.order = np.array(params['order'])
-        self.pbc = params['pbc']
+        self.pbc = np.array(params['pbc'])
         self.cutoff = params['cutoff']
         self.mode = mode
     
