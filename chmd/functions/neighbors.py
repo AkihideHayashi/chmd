@@ -39,7 +39,11 @@ def number_repeats(cell: np.ndarray, pbc: np.ndarray,
     assert cell.shape == (3, 3) or cell.shape[1:] == (3, 3)
     xp = get_array_module(cell)
     dtype = chainer.config.dtype
-    reciprocal_cell = xp.linalg.inv(cell)
+    # reciprocal_cell = xp.linalg.inv(cell)
+    if cell.shape == (3, 3):
+        reciprocal_cell = F.inv(cell).data
+    else:
+        reciprocal_cell = F.batch_inv(cell).data
     inv_lengths = xp.sqrt(xp.sum(reciprocal_cell ** 2, axis=-2))
     repeats = xp.ceil(cutoff * inv_lengths)
     pbc = xp.where(pbc, xp.ones(3, dtype=dtype), xp.zeros(3, dtype=dtype))
