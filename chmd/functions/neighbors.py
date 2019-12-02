@@ -247,7 +247,8 @@ def trio_index(num_elements: int, xp):
 
 def concat_neighbors_flatten_form(n_batch, n_atoms, i2_seed, j2_seed, s2_seed):
     """Concatenate neighbors to flatten form."""
-    raising_bottom = np.arange(n_batch) * n_atoms
+    xp = get_array_module(i2_seed)
+    raising_bottom = xp.arange(n_batch) * n_atoms
     (i2_p, j2_p, s2), aff = series_form.from_list([i2_seed, j2_seed, s2_seed])
     i2 = i2_p + raising_bottom[aff]
     j2 = j2_p + raising_bottom[aff]
