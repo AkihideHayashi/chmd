@@ -22,7 +22,7 @@ from chmd.dynamics.batch import AbstractBatch
 
 
 class ANI1Preprocessor(Preprocessor):
-    def __init__(self, params, mode='aev'):
+    def __init__(self, params, mode='aev', forcecut):
         """Preprocessor for ANI-1.
 
         Parameters
@@ -35,8 +35,10 @@ class ANI1Preprocessor(Preprocessor):
         self.pbc = np.array(params['pbc'])
         self.cutoff = params['cutoff']
         self.mode = mode
-    
+        self.forcecut = forcecut
+
     def process(self, datas, device):
+        self.drain_big_force(datas, self.forcecut, device)
         if self.mode == 'aev':
             self.add_elements(datas, self.order)
             self.add_neighbors(datas, self.cutoff, self.pbc, device)
@@ -54,6 +56,21 @@ class ANI1Preprocessor(Preprocessor):
     def classify(self, data):
         return tuple(number_repeats(
             data['cell'], self.pbc, self.cutoff).astype(np.int64).tolist())
+
+    @staticmethod
+    def drain_max_force(datas, forcecut, device):
+        forces = [data['forces'] for data in datas]
+        [fo], _ = parallel_form.from_list([forces], [0.0])
+        fo = to_device(device, fo)
+        xp = get_array_module(fo)
+        norm = xp.linalg.norm(fo, axis=2)
+        max_norm = xp.max(norm)
+        filt = max_norm < forcecut
+        for fi, data in zip(filt, datas):
+            if fi:
+                data['status'] = 'train'
+            else:
+                data['status'] = 'drain'
 
     @staticmethod
     def add_elements(datas, order):
