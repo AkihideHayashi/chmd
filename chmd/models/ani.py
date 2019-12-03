@@ -22,7 +22,7 @@ from chmd.dynamics.batch import AbstractBatch
 
 
 class ANI1Preprocessor(Preprocessor):
-    def __init__(self, params, mode='aev', forcecut):
+    def __init__(self, params, forcecut, mode='aev'):
         """Preprocessor for ANI-1.
 
         Parameters
