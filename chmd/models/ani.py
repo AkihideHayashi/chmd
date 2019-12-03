@@ -215,7 +215,31 @@ class ANI1WeightedEnergyLoss(Chain):
         report({'loss': loss.data}, self)
         return loss
 
+
 class ANI1EnergyLoss(Chain):
+    """ANI1 (2017)."""
+    def __init__(self, model, tau=0.5):
+        super().__init__()
+        with self.init_scope():
+            self.model = model
+        self.tau = tau
+    
+    def forward(self, aevs, elements, energies, valid):
+        xp = self.xp
+        n_ensemble = len(self.model)
+        n_batch, n_atoms, n_features = aevs.shape
+        predict_atomwise = self.model(aevs, elements, valid)
+        for i in range(n_ensemble):
+            assert xp.all(predict_atomwise.data[i][~valid] == 0.0)
+        predict = F.sum(predict_atomwise, axis=2)
+        assert predict.shape == (n_ensemble, n_batch), "{} != ({}, {})".format(predict.shape, n_ensemble, n_batch)
+        diff = predict - energies[xp.newaxis, :]  # (ensemble, batch)
+        cost = self.tau * F.exp(F.sum(diff ** 2, axis=1) / self.tau)
+        loss = F.sum(cost)
+        report({'loss': loss.data}, self)
+        return loss
+
+class ANI1SimpleEnergyLoss(Chain):
     """ANI1 Energy loss from aevs."""
 
     def __init__(self, model):

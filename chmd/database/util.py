@@ -22,7 +22,7 @@ def random_path(exclude: List[str], ext: str):
             n += 1
 
 
-def define_kpoints(cell):
+def good_kpoints(cell):
     """Define required kpoints from the fact that bulk Pt requires 12."""
     inv = np.linalg.inv(cell)
     b = np.linalg.norm(inv, axis=1)

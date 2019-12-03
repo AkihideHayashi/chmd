@@ -40,6 +40,8 @@ def read_v(v: ElementTree.Element):
                 else:
                     raise KeyError()
             return read_logical(array)
+        elif v.attrib['type'] == 'int':
+            return array.astype(np.int64)
         else:
             raise NotImplementedError()
     else:
@@ -166,6 +168,10 @@ def read_selective(vasprun):
     varray = read_varray(vasprun.find(
         'structure[@name="initialpos"]/varray[@name="selective"]'))
     return varray
+
+
+def read_kpoints(vasprun):
+    return read_v(vasprun.find('kpoints/generation/v[@name="divisions"]'))
 
 
 def read_calculation(calc, nelm):
