@@ -23,11 +23,12 @@ def merge_pickle(inps, out):
 
 def tarfile_to_pickle(tarpath, picklepath):
     """Make pickle file from tar vaspruns."""
+    print("tarfile_to_pickle", flush=True)
     with tarfile.open(tarpath) as tar:
         n = sum(1 for member in tar if member.isreg())
         with open_pickle_dataset_writer(picklepath) as f:
             for i, tarinfo in enumerate(tar):
-                print("{}/{}".format(i, n))
+                print("{}/{}".format(i, n), flush=True)
                 name = tarinfo.name
                 xml = tar.extractfile(tarinfo).read()
                 root = ElementTree.fromstring(xml)
