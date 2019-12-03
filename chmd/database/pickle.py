@@ -43,6 +43,8 @@ def tarfile_to_pickle(tarpath, picklepath):
                     kpt_good = good_kpoints(data['cell'])
                     if kpt_good != (1, 1, 1) and kpt == (1, 1, 1):
                         break
+                    if data['energy'] > 0:
+                        continue
                     data['status'] = 'train'
                     data['symbols'] = symbols
                     data['generation'] = 'mdminimize'
