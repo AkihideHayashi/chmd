@@ -49,6 +49,7 @@ class Preprocessor(ABC):
 
 def preprocess(inp_path, out_path, batch_size, device, trans: Preprocessor):
     """Preprocess data."""
+    print("preprocess", flush=True)
     datasets = {}
     with open_pickle_dataset(inp_path) as fi:
         with open_pickle_dataset_writer(out_path) as fo:
@@ -60,14 +61,14 @@ def preprocess(inp_path, out_path, batch_size, device, trans: Preprocessor):
                     datasets[repeats].append(data)
                     if len(datasets[repeats]) > batch_size:
                         datas = datasets.pop(repeats)
-                        print('{} process for {}'.format(i, repeats))
+                        print('{} process for {}'.format(i, repeats), flush=True)
                         trans.process(datas, device)
                         for d in datas:
                             fo.write(d)
             keys = list(datasets.keys())
             for repeats in keys:
                 datas = datasets.pop(repeats)
-                print('process for {}'.format(repeats))
+                print('process for {}'.format(repeats), flush=True)
                 trans.process(datas, device)
                 for d in datas:
                     fo.write(d)
