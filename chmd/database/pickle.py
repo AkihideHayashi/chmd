@@ -38,9 +38,9 @@ def tarfile_to_pickle(tarpath, picklepath):
                 calculations = root.findall('calculation')
                 for calc in calculations:
                     data = read_calculation(calc, nelm)
-                    kpt_good = good_kpoints(data['cell'])
                     if not data:
                         continue
+                    kpt_good = good_kpoints(data['cell'])
                     if kpt_good != (1, 1, 1) and kpt == (1, 1, 1):
                         break
                     data['status'] = 'train'
