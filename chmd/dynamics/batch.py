@@ -52,8 +52,12 @@ class AbstractBatch(ABC):
         ...
 
     @abstractproperty
-    def pbc(self):
-        """(n_dim)"""
+    def is_atom(self):
+        ...
+
+    @is_atom.setter
+    def is_atom(self, _):
+        ...
 
 class DeviceBatch(DeviceResident):
     def __init__(self):
@@ -100,7 +104,7 @@ class DeviceBatch(DeviceResident):
 
 
 class BasicBatch(DeviceBatch, AbstractBatch):
-    def __init__(self, elements, cells, positions, valid, pbc):
+    def __init__(self, elements, cells, positions, is_atom):
         super().__init__()
         n_batch = positions.shape[0]
         dtype = chainer.config.dtype
@@ -108,9 +112,8 @@ class BasicBatch(DeviceBatch, AbstractBatch):
             self._elements = elements
             self._cells = cells.astype(dtype)
             self._positions = positions.astype(dtype)
-            self._valid = valid
+            self._is_atom = is_atom
             self._potential_energies = self.xp.zeros(n_batch).astype(dtype)
-            self._pbc = pbc
 
     @property
     def elements(self):
@@ -143,15 +146,15 @@ class BasicBatch(DeviceBatch, AbstractBatch):
     @potential_energies.setter
     def potential_energies(self, energies):
         self.potential_energies[...] = energies
-
+    
     @property
-    def pbc(self):
-        return self._pbc
-
-    @property
-    def valid(self):
-        return self._valid
-
+    def is_atom(self):
+        return self._is_atom
+    
+    @is_atom.setter
+    def is_atom(self, is_atom):
+        self._is_atom[...] = is_atom
+ 
 
 # class Batch(DeviceStruct):
 #     """Basic Batch.

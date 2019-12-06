@@ -19,7 +19,7 @@ def calculate_kinetic_energies(cells, velocities, masses, valid):
     v = direct_to_cartesian(cells, velocities)
     m = masses
     atomic = xp.where(valid[:, :, xp.newaxis],
-                      0.5 * m[:, :, xp.newaxis] * v * v,
+                      0.5 * m * v * v,
                       xp.zeros_like(v))
     return xp.sum(atomic.reshape((n_batch, n_atoms * n_dim)), axis=1)
 

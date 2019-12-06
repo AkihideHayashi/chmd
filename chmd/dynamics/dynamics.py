@@ -3,9 +3,10 @@ from abc import ABC, abstractproperty, abstractmethod
 from typing import Dict, Callable
 import numpy as np
 from chainer.dataset.convert import to_device
+import chainer
 from chainer import report, Reporter
-from chmd.dynamics.nosehoover import (setup_nose_hoover,
-                                      nose_hoover_scf,
+from chmd.dynamics.batch import BasicBatch
+from chmd.dynamics.nosehoover import (nose_hoover_scf,
                                       nose_hoover_conserve
                                       )
 from chmd.dynamics.analyze import (calculate_kinetic_energies,
@@ -51,7 +52,7 @@ class DynamicsBatch(ABC):
         """(n_batch, n_atoms)."""
 
     @abstractproperty
-    def valid(self):
+    def is_atom(self):
         """(n_batch, n_atoms)."""
 
     @abstractproperty
@@ -139,6 +140,134 @@ class MolecularDynamicsBatch(DynamicsBatch):
         """(n_batch, n_atoms)."""
 
 
+class NVTBatch(MolecularDynamicsBatch):
+    """MD with NVT ensemble."""
+    @abstractproperty
+    def kbt(self):
+        """Temperature."""
+
+
+class NoseHooverBatch(NVTBatch):
+    """Nose Hoover Chain"""
+    @abstractproperty
+    def numbers(self):
+        """Thermostat numbers."""
+
+    @abstractproperty
+    def targets(self):
+        """Thermostat targets."""
+    
+    @abstractproperty
+    def is_thermostat(self):
+        """Valid for thermostat."""
+
+
+class BasicMolecularDynamicsBatch(BasicBatch, MolecularDynamicsBatch):
+    """Molecular Dynamics requires velocities and accelerations and times."""
+    def __init__(self, elements, cells, positions, velocities,
+                 masses, t0, is_atom):
+        super().__init__(elements, cells, positions, is_atom)
+        dtype = chainer.config.dtype
+        with self.init_scope():
+            self._velocities = velocities.astype(dtype)
+            self._accelerations = self.xp.zeros_like(velocities).astype(dtype)
+            self._forces = self.xp.zeros_like(positions).astype(dtype)
+            self._times = t0.astype(dtype)
+            self._masses = masses
+        
+    @property
+    def velocities(self):
+        return self._velocities
+
+    @velocities.setter
+    def velocities(self, velocities):
+        self._velocities[...] = velocities
+
+    @property
+    def accelerations(self):
+        return self._accelerations
+
+    @accelerations.setter
+    def accelerations(self, accelerations):
+        self._accelerations[...] = accelerations
+
+    @property
+    def forces(self):
+        return self._forces
+
+    @forces.setter
+    def forces(self, forces):
+        self._forces[...] = forces
+
+    @property
+    def times(self):
+        return self._times
+
+    @times.setter
+    def times(self, times):
+        self._times[...] = times
+    
+    @property
+    def masses(self):
+        return self._masses
+    
+    @masses.setter
+    def masses(self, masses):
+        self._masses[...] = masses
+
+
+class BasicNVTBatch(BasicMolecularDynamicsBatch):# (BasicMolecularDynamicsBatch, NVTBatch):
+    def __init__(self, elements, cells, positions, velocities, masses,
+                 t0, kbt, is_atom):
+        super().__init__(elements, cells, positions, velocities, masses,
+                         t0, is_atom)
+        with self.init_scope():
+            self._kbt = kbt
+
+    @property
+    def kbt(self):
+        return self._kbt
+
+    @kbt.setter
+    def kbt(self, kbt):
+        self._kbt[...] = kbt
+
+
+class BasicNoseHooverBatch(BasicNVTBatch):
+    def __init__(self, elements, cells, positions, velocities, masses,
+                 t0, kbt, numbers, targets, is_atom, is_thermostat):
+        super().__init__(elements, cells, positions, velocities, masses,
+                         t0, kbt, is_atom)
+        with self.init_scope():
+            self._numbers = numbers
+            self._targets = targets
+            self._is_thermostat = is_thermostat
+
+    @property
+    def numbers(self):
+        return self._numbers
+
+    @numbers.setter
+    def numbers(self, numbers):
+        self._numbers[...] = numbers
+
+    @property
+    def targets(self):
+        return self._targets
+
+    @targets.setter
+    def targets(self, targets):
+        self._targets[...] = targets
+
+    @property
+    def is_thermostat(self):
+        return self._is_thermostat
+
+    @is_thermostat.setter
+    def is_thermostat(self, is_thermostat):
+        self._is_thermostat[...] = is_thermostat
+
+
 class VelocityVerlet(Dynamics):
     """Normal Velocity Verlet algorithm.
 
@@ -223,8 +352,7 @@ class VelocityScaling(Dynamics):
         super().initialize()
         xp = self.batch.xp
         self.evaluator(self.batch)
-        self.batch.accelerations = (self.batch.forces /
-                                    self.batch.masses[:, :, xp.newaxis])
+        self.batch.accelerations = (self.batch.forces / self.batch.masses)
         self.delta_time = to_device(self.batch.device, self.delta_time)
         self.kbt = to_device(self.batch.device, self.kbt)
 
@@ -234,7 +362,7 @@ class VelocityScaling(Dynamics):
         x_old = self.batch.positions
         v_old = self.batch.velocities
         a_old = self.batch.accelerations
-        m = self.batch.masses[:, :, xp.newaxis]
+        m = self.batch.masses
         dt = self.delta_time[:, xp.newaxis, xp.newaxis]
 
         x_new = x_old + v_old * dt + 0.5 * a_old * dt * dt
@@ -246,11 +374,11 @@ class VelocityScaling(Dynamics):
         v_new = v_old + 0.5 * (a_old + a_new) * dt
 
         n_dim = self.batch.positions.shape[-1]
-        dof = xp.sum(self.batch.valid, axis=1) * n_dim
+        dof = xp.sum(self.batch.is_atom, axis=1) * n_dim
         kinetic = calculate_kinetic_energies(self.batch.cells,
                                              v_new,
                                              self.batch.masses,
-                                             self.batch.valid)
+                                             self.batch.is_atom)
         kbt = calculate_temperature(kinetic, dof)
         ratio = np.sqrt(self.kbt / kbt)
         self.batch.velocities = v_new * ratio[:, xp.newaxis, xp.newaxis]
@@ -258,79 +386,46 @@ class VelocityScaling(Dynamics):
 
 
 class NoseHooverChain(Dynamics):
-    def __init__(self, batch: MolecularDynamicsBatch,
+    def __init__(self, batch: NoseHooverBatch,
                  energy_forces_eval: Callable, dt,
-                 thermostat_kbt, thermostat_timeconst,
-                 thermostat_numbers, thermostat_targets,
                  tol=1e-8,
-                 name='md'
-                 ):
-        import warnings
-        warnings.warn('Now, nose hoover is assumed to handle seriese form.')
+                 name='md'):
         super().__init__(energy_forces_eval, name='md')
-        self.batch: MolecularDynamicsBatch = batch
-        self.accelerations = None
+        self.batch: NoseHooverBatch = batch
         self.delta_time = dt
         self.tol = tol
-        (self.positions,
-         self.velocities,
-         self.masses,
-         self.thermostat_numbers,
-         self.thermostat_targets,
-         self.thermostat_kbt,
-         self.is_atom,
-         self.affiliations
-         ) = setup_nose_hoover(
-            self.batch.positions,
-            self.batch.velocities,
-            self.batch.masses,
-            self.batch.affiliations,
-            thermostat_numbers,
-            thermostat_targets,
-            thermostat_kbt,
-            thermostat_timeconst)
 
     def initialize(self):
         super().initialize()
-        self.accelerations = self.batch.xp.zeros_like(self.positions)
         self.evaluator(self.batch)
-        self.accelerations[self.is_atom] = (
-            self.batch.forces / self.batch.masses[:, None]).flatten()
+        self.batch.accelerations = (self.batch.forces / self.batch.masses)
+        self.delta_time = to_device(self.batch.device, self.delta_time)
 
     def update(self):
         xp = self.batch.xp
-        dt = self.delta_time[self.affiliations]
-        x_old = self.positions
-        v_old = self.velocities
-        a_old = self.accelerations
-        x_old[self.is_atom] = self.batch.positions.flatten()
-        v_old[self.is_atom] = self.batch.velocities.flatten()
-        m = self.masses
-        x_new = x_old + v_old * dt + 0.5 * a_old * dt * dt
-        self.batch.positions = x_new[self.is_atom].reshape(
-            self.batch.positions.shape)
-        self.batch.times = self.batch.times + self.delta_time
+        dt = xp.broadcast_to(self.delta_time[:, xp.newaxis, xp.newaxis], self.batch.positions.shape)
+        x_old = self.batch.positions
+        v_old = self.batch.velocities
+        a_old = self.batch.accelerations
+        m = self.batch.masses
+        self.batch.positions = x_old + v_old * dt + 0.5 * a_old * dt * dt
         self.evaluator(self.batch)
-        forces = xp.zeros_like(self.positions)
-        forces[self.is_atom] = self.batch.forces.flatten()
-        v_new, a_new = nose_hoover_scf(a_old, v_old, forces, m,
-                                       self.thermostat_numbers,
-                                       self.thermostat_targets,
-                                       self.thermostat_kbt, dt, self.tol)
-        self.positions = x_new
-        self.velocities = v_new
-        self.accelerations = a_new
-        self.batch.velocities = v_new[self.is_atom].reshape(
-            self.batch.velocities.shape)
-        self.batch.kinetic_energies = kinetic_energy(len(self.batch.dof),
-                                                     self.batch.masses,
-                                                     self.batch.velocities,
-                                                     self.batch.affiliations)
-        self.batch.mechanical_energies = (self.batch.kinetic_energies +
-                                          self.batch.potential_energies)
-        will_report = dict(self.batch.items())
-        will_report['temperatures'] = temperature(
-            self.batch.kinetic_energies, self.batch.dof)
-        will_report['conserved'] = nose_hoover_conserve(self.positions, self.velocities, self.masses, self.thermostat_numbers,
-                                                        self.thermostat_targets, self.thermostat_kbt, self.batch.potential_energies, self.affiliations)
-        report(will_report)
+        forces = self.batch.forces
+        v_new, a_new = nose_hoover_scf(
+            a_old.flatten(),
+            v_old.flatten(),
+            forces.flatten(),
+            m.flatten(),
+            self.batch.numbers,
+            self.batch.targets,
+            self.batch.kbt.flatten(),
+            dt.flatten(),
+            self.tol
+            )
+        invalid = ~(self.batch.is_atom[:, :, xp.newaxis] | self.batch.is_thermostat)
+        self.batch.velocities = v_new.reshape(self.batch.positions.shape)
+        self.batch.velocities[invalid] = 0.0
+        self.batch.accelerations = a_new.reshape(self.batch.positions.shape)
+        self.batch.accelerations[invalid] = 0.0
+        self.batch.times += self.delta_time
+

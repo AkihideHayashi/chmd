@@ -303,7 +303,6 @@ def concat_aev(batch, device):
     aevs = parallels[0]
     elements = parallels[1]
     energies = np.array([atoms['energy'] for atoms in batch])
-
     dtype = chainer.config.dtype
     return_dict = {
         'aevs': aevs.astype(dtype),
@@ -330,7 +329,7 @@ class ANI1Batch(AbstractBatch):
         ...
 
     @abstractproperty
-    def valid(self):
+    def is_atom(self):
         ...
 
     @abstractproperty
@@ -365,7 +364,7 @@ class ANI1Batch(AbstractBatch):
     def atomic_error(self, _):
         ...
 
-    @abstractmethod
+    @abstractproperty
     def xp(self):
         ...
 
@@ -401,7 +400,7 @@ class ANI1ForceField(object):
         direct = Variable(batch.positions)
         elements = batch.elements
         cells = Variable(batch.cells)
-        valid = batch.valid  # (batch, atoms)
+        valid = batch.is_atom  # (batch, atoms)
         assert valid.shape == (n_batch, n_atoms)
         number_of_atoms = xp.sum(valid, 1)
         assert number_of_atoms.shape == (n_batch, )

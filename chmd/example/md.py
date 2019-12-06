@@ -4,8 +4,8 @@ from ase.units import kB
 import chainer
 from chainer import report, get_current_reporter
 from chainer.dataset.convert import to_device
-from chmd.dynamics.dynamics import VelocityScaling, MolecularDynamicsBatch
-from chmd.models.ani import ANI1, ANI1AEV2EnergyNet, ANI1ForceField
+from chmd.dynamics.dynamics import VelocityScaling, MolecularDynamicsBatch, NoseHooverChain
+from chmd.models.ani import ANI1, ANI1AEV2EnergyWithShifter, ANI1ForceField, ANI1AEV2EnergyNet
 from chmd.dynamics.ani import BasicNeighborList, ANI1MolecularDynamicsBatch
 from chmd.dynamics.dynamics import Extension
 from chmd.functions.activations import gaussian
@@ -27,7 +27,7 @@ class MDReporter(Extension):
             'symbols': self.order[to_device(-1, batch.elements)],
             'positions': batch.positions,
             'cells': batch.cells,
-            'valid': batch.valid,
+            'valid': batch.is_atom,
             'velocities': batch.velocities,
             'times': batch.times,
             'masses': batch.masses
@@ -145,35 +145,46 @@ def main():
     n_batch = 3
     device_id = -1
     ratio = np.array([1.0, 1.0, 1.0])
-    batch = random_batch(cell, min_distance, n_atoms, max_cycle, ratio, n_batch,
-                         params, 'result/best_model', masses=np.array([10.0, 10.0, 10.0]))
-    # efv = ANI1ForceField(params, 'result/best_model', BasicNeighborList(9.0))
+    kbt = np.ones(n_batch).astype(dtype) * 600 * kB
     model = ANI1(ANI1AEV2EnergyNet, **params)
+    masses = np.array([10.0, 10.0, 10.0])
     # chainer.serializers.load_npz('result/best_model')
-    efv = ANI1ForceField(model, BasicNeighborList(9.0))
+    efv = ANI1ForceField(model, BasicNeighborList(9.0, params['pbc']))
+    batch = random_batch(cell, min_distance, n_atoms, max_cycle, ratio, n_batch, params['order'], efv, masses, kbt, True)
     batch.to_device(device_id)
     efv.model.to_device(device_id)
-    kbt = np.ones(n_batch).astype(dtype) * 600 * kB
     dt = np.ones(n_batch).astype(dtype) * 0.2
-    md = VelocityScaling(batch, efv, dt, kbt)
+    # md = VelocityScaling(batch, efv, dt, kbt)
+    md = NoseHooverChain(batch, efv, dt)
     md.extend(ANI1Reporter(params['order']))
     md.extend(XYZDumper('traj/md'))
-    md.extend(PrintReport(['quantities/times']))
+    md.extend(PrintReport(['quntities/times']))
     md.extend(JsonDumper('out.json'))
     md.extend(PickleDumper('out.pkl'))
-    md.run(10000)
-
+    md.run(100)
 
 def random_batch(cell, min_distance, n_atoms,
-                 max_cycle, ratio, n_batch, params, path, masses=None):
-    order = np.array(params['order'])
+                 max_cycle, ratio, n_batch, order, model, masses, kbt, nose=False):
+    order = np.array(order)
     positions = [random_coordinates(cell, min_distance, n_atoms, max_cycle)
                  for _ in range(n_batch)]
     symbols = [random_symbols(order, ratio, len(p)) for p in positions]
     cells = np.array([cell for _ in range(n_batch)])
     velocities = [np.random.random(p.shape) * 2 - 1 for p in positions]
     t0 = np.zeros(n_batch, dtype=np.int32)
-    return ANI1MolecularDynamicsBatch(symbols, cells, positions, velocities, t0, params, path, masses)
+    if nose:
+        targets = [np.arange(len(p)) for p in positions]
+        numbers = [np.ones_like(t) * -1 for t in targets]
+        kbt = [np.array([k]) for k in kbt]
+        timeconst = [np.ones_like(k) * 20 for k in kbt]
+        return ANI1MolecularDynamicsBatch.setup_nose_hoover_chain(
+            symbols, cells, positions, velocities, t0, masses, order, model,
+            numbers, targets, timeconst, kbt
+        )
+    else:
+        return ANI1MolecularDynamicsBatch.setup(
+            symbols, cells, positions, velocities, t0, masses, kbt,
+            order, model)
 
 
 main()
